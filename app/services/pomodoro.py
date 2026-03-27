@@ -36,6 +36,13 @@ def create_session(db: Session, data: SessionCreate) -> PomodoroSession:
     return session
 
 
+def delete_session(db: Session, session_id: str) -> None:
+    session = db.query(PomodoroSession).filter(PomodoroSession.id == session_id).first()
+    if session:
+        db.delete(session)
+        db.commit()
+
+
 def get_stats(db: Session, project_id: str | None = None) -> SessionStats:
     q = db.query(PomodoroSession)
     if project_id:

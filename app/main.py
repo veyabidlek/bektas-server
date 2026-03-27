@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_tables
-from app.routers import about, articles, habits, pomodoro
+from app.routers import about, admin, articles, habits, pomodoro
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.include_router(articles.router)
 app.include_router(habits.router)
 app.include_router(pomodoro.router)
 app.include_router(about.router)
+app.include_router(admin.router)
 
 
 @app.get("/")

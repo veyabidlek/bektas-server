@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_admin
 from app.schemas.pomodoro import ProjectOut, SessionCreate, SessionOut, SessionStats
 from app.services import pomodoro as svc
 
@@ -36,3 +37,12 @@ def create_session(
     db: Session = Depends(get_db),
 ):
     return svc.create_session(db, data)
+
+
+@router.delete("/api/sessions/{session_id}", status_code=204)
+def delete_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    svc.delete_session(db, session_id)

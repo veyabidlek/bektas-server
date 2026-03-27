@@ -23,6 +23,7 @@ class ArticleSummary(BaseModel):
     date: str
     read_time: str
     comment_count: int
+    archived: bool = False
 
 
 class ArticleOut(BaseModel):
@@ -34,4 +35,22 @@ class ArticleOut(BaseModel):
     date: str
     read_time: str
     body: list[str]
+    archived: bool
     comments: list[CommentOut]
+
+
+class ArticleCreate(BaseModel):
+    slug: str
+    title: str
+    description: str
+    date: str
+    read_time: str
+    body: list[str]
+
+
+class ArticleUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    date: str | None = None
+    read_time: str | None = None
+    body: list[str] | None = None

@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,7 @@ class Article(Base):
     date: Mapped[str] = mapped_column(String, nullable=False)
     read_time: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[list] = mapped_column(JSON, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     comments: Mapped[list["Comment"]] = relationship(
         back_populates="article",

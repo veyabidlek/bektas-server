@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -11,6 +11,7 @@ class Habit(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     emoji: Mapped[str] = mapped_column(String, nullable=False)
     color: Mapped[str] = mapped_column(String, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     completions: Mapped[list["HabitCompletion"]] = relationship(
         back_populates="habit",

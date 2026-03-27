@@ -6,6 +6,7 @@ class HabitOut(BaseModel):
     name: str
     emoji: str
     color: str
+    archived: bool = False
     completed_days: dict[str, bool]
 
 

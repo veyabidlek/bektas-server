@@ -10,6 +10,7 @@ from app.database import SessionLocal, create_tables, drop_tables
 from app.models.about import EducationItem, ExperienceItem, SkillCategory
 from app.models.article import Article, Comment
 from app.models.habit import Habit, HabitCompletion
+from app.models.profile import Profile
 from app.models.pomodoro import PomodoroSession, Project
 
 
@@ -165,6 +166,22 @@ def seed_pomodoro(db):
 
 
 def seed_about(db):
+    db.add(Profile(
+        id=1,
+        tagline="Creative developer crafting digital experiences",
+        short_bio="Software engineer building products at the intersection of code and design. Based in Berlin.",
+        long_bio=[
+            "Software engineer with a passion for building elegant, performant web applications. I care deeply about user experience, clean architecture, and shipping products that make a difference.",
+            "Currently focused on full-stack development with TypeScript, React, and Node.js. Previously worked across fintech, e-commerce, and developer tooling. When I'm not coding, you'll find me exploring design systems, reading about distributed systems, or hiking.",
+        ],
+        social_links=[
+            {"platform": "github", "url": "https://github.com"},
+            {"platform": "linkedin", "url": "https://linkedin.com"},
+            {"platform": "x", "url": "https://x.com"},
+            {"platform": "email", "url": "mailto:hello@example.com"},
+        ],
+    ))
+
     experience = [
         ExperienceItem(company="Acme Corp", role="Senior Software Engineer", period="2024 — Present", description="Leading frontend architecture for the core product. Built a design system used across 5 teams, improved Lighthouse performance score from 62 to 94.", sort_order=0),
         ExperienceItem(company="FinStack", role="Full-Stack Engineer", period="2022 — 2024", description="Developed real-time payment processing dashboard serving 10k+ daily active users. Implemented WebSocket-based live transaction feeds and analytics.", sort_order=1),

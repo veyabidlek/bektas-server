@@ -6,8 +6,27 @@ from app.models.habit import Habit, HabitCompletion
 from app.schemas.habit import HabitOut, HabitStats
 
 
-def list_habits(db: Session) -> list[HabitOut]:
-    habits = db.query(Habit).all()
+def create_habit(db: Session, habit_id: str, name: str, emoji: str, color: str) -> HabitOut:
+    habit = Habit(id=habit_id, name=name, emoji=emoji, color=color, archived=False)
+    db.add(habit)
+    db.commit()
+    return HabitOut(id=habit.id, name=habit.name, emoji=habit.emoji, color=habit.color, archived=False, completed_days={})
+
+
+def archive_habit(db: Session, habit_id: str, archived: bool) -> bool:
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if not habit:
+        return False
+    habit.archived = archived
+    db.commit()
+    return True
+
+
+def list_habits(db: Session, include_archived: bool = False) -> list[HabitOut]:
+    q = db.query(Habit)
+    if not include_archived:
+        q = q.filter(Habit.archived == False)  # noqa: E712
+    habits = q.all()
     result = []
 
     for habit in habits:
@@ -23,6 +42,7 @@ def list_habits(db: Session) -> list[HabitOut]:
                 name=habit.name,
                 emoji=habit.emoji,
                 color=habit.color,
+                archived=habit.archived,
                 completed_days=completed_days,
             )
         )
@@ -66,14 +86,13 @@ def get_habit_stats(db: Session, habit_id: str, days: int = 30) -> HabitStats:
     )
     completed_set = {c.date for c in completions}
 
-    # Current streak: walk backwards from today
     current_streak = 0
     for i in range(days):
         d = (today - timedelta(days=i)).isoformat()
         if d in completed_set:
             current_streak += 1
         elif i == 0:
-            continue  # today might not be done yet
+            continue
         else:
             break
 
