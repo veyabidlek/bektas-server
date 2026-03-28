@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class CommentCreate(BaseModel):
-    author: str
+    author: str = ""
     body: str
 
 

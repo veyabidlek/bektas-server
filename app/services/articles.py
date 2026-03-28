@@ -63,13 +63,14 @@ def archive_article(db: Session, slug: str, archived: bool) -> Article | None:
 
 
 def add_comment(db: Session, slug: str, data: CommentCreate) -> Comment:
-    words = data.author.strip().split()
-    avatar = "".join(w[0] for w in words[:2]).upper() if words else "?"
+    author = data.author.strip() if data.author.strip() else "Anonymous"
+    words = author.split()
+    avatar = "".join(w[0] for w in words[:2]).upper()
 
     comment = Comment(
         id=str(uuid.uuid4())[:8],
         article_slug=slug,
-        author=data.author.strip(),
+        author=author,
         avatar=avatar,
         date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
         body=data.body.strip(),
