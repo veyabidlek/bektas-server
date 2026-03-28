@@ -3,6 +3,7 @@ from app.models.habit import Habit, HabitCompletion
 from app.models.pomodoro import Project, PomodoroSession
 from app.models.about import ExperienceItem, SkillCategory, EducationItem
 from app.models.profile import Profile
+from app.models.portfolio import PortfolioProject
 
 __all__ = [
     "Article", "Comment",
@@ -10,4 +11,5 @@ __all__ = [
     "Project", "PomodoroSession",
     "ExperienceItem", "SkillCategory", "EducationItem",
     "Profile",
+    "PortfolioProject",
 ]
