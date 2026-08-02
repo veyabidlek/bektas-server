@@ -16,13 +16,20 @@ def _to_out(p: PortfolioProject) -> PortfolioProjectOut:
         featured=p.featured,
         sort_order=p.sort_order,
         archived=p.archived,
+        visibility=p.visibility,
     )
 
 
-def list_portfolio_projects(db: Session, include_archived: bool = False) -> list[PortfolioProjectOut]:
+def list_portfolio_projects(
+    db: Session,
+    include_archived: bool = False,
+    levels: list[str] | None = None,
+) -> list[PortfolioProjectOut]:
     q = db.query(PortfolioProject)
     if not include_archived:
         q = q.filter(PortfolioProject.archived == False)  # noqa: E712
+    if levels is not None:
+        q = q.filter(PortfolioProject.visibility.in_(levels))
     projects = q.order_by(PortfolioProject.featured.desc(), PortfolioProject.sort_order.asc()).all()
     return [_to_out(p) for p in projects]
 
@@ -38,6 +45,7 @@ def create_portfolio_project(db: Session, data: PortfolioProjectCreate) -> Portf
         stack=data.stack,
         featured=False,
         sort_order=data.sort_order,
+        visibility=data.visibility,
         archived=False,
     )
     db.add(project)

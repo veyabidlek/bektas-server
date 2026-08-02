@@ -112,3 +112,33 @@ CREATE TABLE IF NOT EXISTS portfolio_projects (
     sort_order     INTEGER NOT NULL DEFAULT 0,
     archived       BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 003 — Visibility tiers + friends access + markdown articles
+-- Date: 2026-08-02
+--
+-- Applied automatically at startup by ensure_columns() in app/database.py,
+-- which is idempotent. Recorded here for the human-readable history.
+-- -----------------------------------------------------------------------------
+
+-- Three-level visibility: 'public' | 'friends' | 'private'
+ALTER TABLE habits             ADD COLUMN visibility VARCHAR NOT NULL DEFAULT 'public';
+ALTER TABLE articles           ADD COLUMN visibility VARCHAR NOT NULL DEFAULT 'public';
+ALTER TABLE projects           ADD COLUMN visibility VARCHAR NOT NULL DEFAULT 'public';
+ALTER TABLE portfolio_projects ADD COLUMN visibility VARCHAR NOT NULL DEFAULT 'public';
+
+-- Markdown source for articles. Legacy rows keep their JSON block `body`;
+-- body_md takes precedence when non-empty.
+ALTER TABLE articles ADD COLUMN body_md TEXT NOT NULL DEFAULT '';
+
+-- A person allowed to see 'friends'-level content. `code` is both the pincode
+-- typed on /friend and the ?c= in a share link.
+CREATE TABLE IF NOT EXISTS friends (
+    id           VARCHAR PRIMARY KEY,
+    name         VARCHAR NOT NULL,
+    code         VARCHAR NOT NULL UNIQUE,
+    created_at   VARCHAR NOT NULL,
+    last_seen_at VARCHAR,
+    revoked      BOOLEAN NOT NULL DEFAULT FALSE
+);

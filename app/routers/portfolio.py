@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_admin
+from app.dependencies import require_admin, viewer_level, visible_levels
 from app.models.portfolio import PortfolioProject
 from app.schemas.portfolio import PortfolioProjectCreate, PortfolioProjectOut, PortfolioProjectUpdate
 from app.services import portfolio as svc
@@ -14,8 +14,11 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 def get_portfolio_projects(
     include_archived: bool = False,
     db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
 ):
-    return svc.list_portfolio_projects(db, include_archived=include_archived)
+    return svc.list_portfolio_projects(
+        db, include_archived=include_archived, levels=visible_levels(level)
+    )
 
 
 @router.post("", response_model=PortfolioProjectOut, status_code=201)

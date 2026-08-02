@@ -4,6 +4,7 @@ from app.models.pomodoro import Project, PomodoroSession
 from app.models.about import ExperienceItem, SkillCategory, EducationItem
 from app.models.profile import Profile
 from app.models.portfolio import PortfolioProject
+from app.models.friend import Friend
 
 __all__ = [
     "Article", "Comment",
@@ -12,4 +13,5 @@ __all__ = [
     "ExperienceItem", "SkillCategory", "EducationItem",
     "Profile",
     "PortfolioProject",
+    "Friend",
 ]

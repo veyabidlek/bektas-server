@@ -12,6 +12,7 @@ class Habit(Base):
     emoji: Mapped[str] = mapped_column(String, nullable=False)
     color: Mapped[str] = mapped_column(String, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    visibility: Mapped[str] = mapped_column(String, nullable=False, default="public")
 
     completions: Mapped[list["HabitCompletion"]] = relationship(
         back_populates="habit",

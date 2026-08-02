@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_admin
+from app.dependencies import require_admin, viewer_level, visible_levels
 from app.schemas.article import (
     ArticleCreate,
     ArticleOut,
@@ -20,8 +20,11 @@ router = APIRouter(prefix="/api/articles", tags=["articles"])
 def get_articles(
     include_archived: bool = False,
     db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
 ):
-    rows = svc.list_articles(db, include_archived=include_archived)
+    rows = svc.list_articles(
+        db, include_archived=include_archived, levels=visible_levels(level)
+    )
     return [
         ArticleSummary(
             slug=a.slug,
@@ -31,15 +34,20 @@ def get_articles(
             read_time=a.read_time,
             comment_count=len(a.comments),
             archived=a.archived,
+            visibility=a.visibility,
         )
         for a in rows
     ]
 
 
 @router.get("/{slug}", response_model=ArticleOut)
-def get_article(slug: str, db: Session = Depends(get_db)):
+def get_article(
+    slug: str,
+    db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
+):
     article = svc.get_article(db, slug)
-    if not article:
+    if not article or article.visibility not in visible_levels(level):
         raise HTTPException(status_code=404, detail="Article not found")
     return article
 

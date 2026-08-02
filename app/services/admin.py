@@ -73,7 +73,9 @@ def create_token() -> str:
 
 def verify_token(token: str) -> bool:
     try:
-        jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return True
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return False
+    # Friend tokens are signed with the same secret, so a valid signature alone
+    # is not proof of admin — the subject has to say so.
+    return payload.get("sub") == "admin"

@@ -12,6 +12,7 @@ class PortfolioProjectOut(BaseModel):
     featured: bool
     sort_order: int
     archived: bool
+    visibility: str = "public"
 
 
 class PortfolioProjectCreate(BaseModel):
@@ -23,6 +24,7 @@ class PortfolioProjectCreate(BaseModel):
     github_url: str | None = None
     stack: list[str] = []
     sort_order: int = 0
+    visibility: str = "public"
 
 
 class PortfolioProjectUpdate(BaseModel):
@@ -33,3 +35,4 @@ class PortfolioProjectUpdate(BaseModel):
     github_url: str | None = None
     stack: list[str] | None = None
     sort_order: int | None = None
+    visibility: str | None = None

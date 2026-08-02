@@ -6,11 +6,22 @@ from app.models.habit import Habit, HabitCompletion
 from app.schemas.habit import HabitOut, HabitStats
 
 
-def create_habit(db: Session, habit_id: str, name: str, emoji: str, color: str) -> HabitOut:
-    habit = Habit(id=habit_id, name=name, emoji=emoji, color=color, archived=False)
+def create_habit(
+    db: Session, habit_id: str, name: str, emoji: str, color: str, visibility: str = "public"
+) -> HabitOut:
+    habit = Habit(id=habit_id, name=name, emoji=emoji, color=color, archived=False, visibility=visibility)
     db.add(habit)
     db.commit()
-    return HabitOut(id=habit.id, name=habit.name, emoji=habit.emoji, color=habit.color, archived=False, completed_days={})
+    return HabitOut(id=habit.id, name=habit.name, emoji=habit.emoji, color=habit.color, archived=False, visibility=habit.visibility, completed_days={})
+
+
+def set_visibility(db: Session, habit_id: str, visibility: str) -> bool:
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if not habit:
+        return False
+    habit.visibility = visibility
+    db.commit()
+    return True
 
 
 def archive_habit(db: Session, habit_id: str, archived: bool) -> bool:
@@ -22,10 +33,16 @@ def archive_habit(db: Session, habit_id: str, archived: bool) -> bool:
     return True
 
 
-def list_habits(db: Session, include_archived: bool = False) -> list[HabitOut]:
+def list_habits(
+    db: Session,
+    include_archived: bool = False,
+    levels: list[str] | None = None,
+) -> list[HabitOut]:
     q = db.query(Habit)
     if not include_archived:
         q = q.filter(Habit.archived == False)  # noqa: E712
+    if levels is not None:
+        q = q.filter(Habit.visibility.in_(levels))
     habits = q.all()
     result = []
 
@@ -43,6 +60,7 @@ def list_habits(db: Session, include_archived: bool = False) -> list[HabitOut]:
                 emoji=habit.emoji,
                 color=habit.color,
                 archived=habit.archived,
+                visibility=habit.visibility,
                 completed_days=completed_days,
             )
         )

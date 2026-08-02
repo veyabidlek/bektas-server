@@ -17,3 +17,4 @@ class PortfolioProject(Base):
     featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    visibility: Mapped[str] = mapped_column(String, nullable=False, default="public")

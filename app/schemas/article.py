@@ -24,6 +24,7 @@ class ArticleSummary(BaseModel):
     read_time: str
     comment_count: int
     archived: bool = False
+    visibility: str = "public"
 
 
 class ArticleOut(BaseModel):
@@ -35,7 +36,9 @@ class ArticleOut(BaseModel):
     date: str
     read_time: str
     body: list[str]
+    body_md: str = ""
     archived: bool
+    visibility: str = "public"
     comments: list[CommentOut]
 
 
@@ -45,7 +48,9 @@ class ArticleCreate(BaseModel):
     description: str
     date: str
     read_time: str
-    body: list[str]
+    body: list[str] = []
+    body_md: str = ""
+    visibility: str = "public"
 
 
 class ArticleUpdate(BaseModel):
@@ -54,3 +59,5 @@ class ArticleUpdate(BaseModel):
     date: str | None = None
     read_time: str | None = None
     body: list[str] | None = None
+    body_md: str | None = None
+    visibility: str | None = None

@@ -7,6 +7,7 @@ class HabitOut(BaseModel):
     emoji: str
     color: str
     archived: bool = False
+    visibility: str = "public"
     completed_days: dict[str, bool]
 
 

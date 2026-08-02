@@ -10,6 +10,7 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     color: Mapped[str] = mapped_column(String, nullable=False)
+    visibility: Mapped[str] = mapped_column(String, nullable=False, default="public")
 
     sessions: Mapped[list["PomodoroSession"]] = relationship(
         back_populates="project",

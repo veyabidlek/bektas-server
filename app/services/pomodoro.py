@@ -7,18 +7,32 @@ from app.models.pomodoro import PomodoroSession, Project
 from app.schemas.pomodoro import SessionCreate, SessionStats
 
 
-def list_projects(db: Session) -> list[Project]:
-    return db.query(Project).all()
+def list_projects(db: Session, levels: list[str] | None = None) -> list[Project]:
+    q = db.query(Project)
+    if levels is not None:
+        q = q.filter(Project.visibility.in_(levels))
+    return q.all()
+
+
+def _visible_project_ids(db: Session, levels: list[str] | None) -> list[str] | None:
+    """None means 'no restriction'; a list restricts sessions to those projects."""
+    if levels is None:
+        return None
+    return [p.id for p in db.query(Project.id).filter(Project.visibility.in_(levels)).all()]
 
 
 def list_sessions(
     db: Session,
     project_id: str | None = None,
     limit: int = 100,
+    levels: list[str] | None = None,
 ) -> list[PomodoroSession]:
     q = db.query(PomodoroSession).order_by(PomodoroSession.started_at.desc())
     if project_id:
         q = q.filter(PomodoroSession.project_id == project_id)
+    allowed = _visible_project_ids(db, levels)
+    if allowed is not None:
+        q = q.filter(PomodoroSession.project_id.in_(allowed))
     return q.limit(limit).all()
 
 
@@ -43,10 +57,15 @@ def delete_session(db: Session, session_id: str) -> None:
         db.commit()
 
 
-def get_stats(db: Session, project_id: str | None = None) -> SessionStats:
+def get_stats(
+    db: Session, project_id: str | None = None, levels: list[str] | None = None
+) -> SessionStats:
     q = db.query(PomodoroSession)
     if project_id:
         q = q.filter(PomodoroSession.project_id == project_id)
+    allowed = _visible_project_ids(db, levels)
+    if allowed is not None:
+        q = q.filter(PomodoroSession.project_id.in_(allowed))
 
     all_sessions = q.all()
 

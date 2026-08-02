@@ -7,10 +7,16 @@ from app.models.article import Article, Comment
 from app.schemas.article import ArticleCreate, ArticleUpdate, CommentCreate
 
 
-def list_articles(db: Session, include_archived: bool = False) -> list[Article]:
+def list_articles(
+    db: Session,
+    include_archived: bool = False,
+    levels: list[str] | None = None,
+) -> list[Article]:
     q = db.query(Article)
     if not include_archived:
         q = q.filter(Article.archived == False)  # noqa: E712
+    if levels is not None:
+        q = q.filter(Article.visibility.in_(levels))
     return q.order_by(Article.date.desc()).all()
 
 
@@ -31,6 +37,8 @@ def create_article(db: Session, data: ArticleCreate) -> Article:
         date=data.date,
         read_time=data.read_time,
         body=data.body,
+        body_md=data.body_md,
+        visibility=data.visibility,
         archived=False,
     )
     db.add(article)

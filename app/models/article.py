@@ -1,5 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -15,6 +14,9 @@ class Article(Base):
     read_time: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[list] = mapped_column(JSON, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    visibility: Mapped[str] = mapped_column(String, nullable=False, default="public")
+    # Markdown source. Legacy rows keep their JSON block `body`; body_md wins when set.
+    body_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     comments: Mapped[list["Comment"]] = relationship(
         back_populates="article",
