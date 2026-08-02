@@ -1,3 +1,4 @@
+import hmac
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -7,8 +8,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ADMIN_PASSCODE = os.getenv("ADMIN_PASSCODE", "300804")
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-prod")
+ADMIN_PASSCODE = os.getenv("ADMIN_PASSCODE")
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+if not ADMIN_PASSCODE or not JWT_SECRET:
+    raise RuntimeError(
+        "ADMIN_PASSCODE and JWT_SECRET must be set in the environment. "
+        "Refusing to start with a default — that would leave admin open to anyone."
+    )
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
@@ -50,7 +58,8 @@ def clear_attempts(ip: str) -> None:
 
 
 def verify_passcode(passcode: str) -> bool:
-    return passcode == ADMIN_PASSCODE
+    # compare_digest, not ==, so the comparison time does not leak the prefix length
+    return hmac.compare_digest(passcode, ADMIN_PASSCODE)
 
 
 def create_token() -> str:
