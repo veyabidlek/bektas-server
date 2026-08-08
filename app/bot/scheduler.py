@@ -111,45 +111,47 @@ def mark_fired(db: Session, event_id: str, now: datetime) -> None:
         db.commit()
 
 
-def digest_lines(db: Session, now: datetime) -> list[str]:
-    """Today's tasks and events, as the morning message."""
+def digest_message(db: Session, now: datetime) -> str:
+    """The 08:00 message, built from the same shape the dashboard shows.
+
+    Events timeline, then due tasks with their counts, then the inbox — so the
+    bot and the site read as one product rather than two summaries.
+    """
     from app.bot import copy
+    from app.models.inbox import InboxItem
 
     today = now.strftime("%Y-%m-%d")
-    lines: list[str] = []
 
     open_tasks = [
         t
         for t in db.query(Task).filter(Task.done == False).all()  # noqa: E712
         if t.due_at
     ]
-    overdue = sorted([t for t in open_tasks if t.due_at[:10] < today], key=lambda t: t.due_at)
+    overdue = [t for t in open_tasks if t.due_at[:10] < today]
     due_today = sorted([t for t in open_tasks if t.due_at[:10] == today], key=lambda t: t.due_at)
 
-    events = (
-        db.query(CalendarEvent)
-        .filter(CalendarEvent.starts_at >= today, CalendarEvent.starts_at < today + "T23:59:59")
-        .order_by(CalendarEvent.starts_at.asc())
-        .all()
+    # A timed event's starts_at carries an offset; an all-day one is just the
+    # date, so both shapes have to be matched.
+    events = [
+        e
+        for e in db.query(CalendarEvent).all()
+        if e.starts_at[:10] == today
+    ]
+    events.sort(key=lambda e: (len(e.starts_at) <= 10 and "0" or e.starts_at[11:16]))
+
+    timeline = [
+        (e.starts_at[11:16] if len(e.starts_at) >= 16 else None, e.title) for e in events
+    ]
+
+    inbox = db.query(InboxItem).filter(InboxItem.triaged_to.is_(None)).count()
+
+    return copy.digest(
+        today_iso=today,
+        events=timeline,
+        tasks=[t.title for t in due_today[:8]],
+        overdue=len(overdue),
+        inbox=inbox,
     )
-    # An all-day event's starts_at is just the date, so the range above misses it.
-    all_day = db.query(CalendarEvent).filter(CalendarEvent.starts_at == today).all()
-    events = list({e.id: e for e in events + all_day}.values())
-    events.sort(key=lambda e: e.starts_at)
-
-    if overdue:
-        lines.append(copy.DIGEST_OVERDUE)
-        lines += [f"• {t.title} ({t.due_at[:10]})" for t in overdue[:5]]
-    if due_today:
-        lines.append(copy.DIGEST_TASKS)
-        lines += [f"• {t.title}" for t in due_today[:8]]
-    if events:
-        lines.append(copy.DIGEST_EVENTS)
-        for event in events[:8]:
-            when = event.starts_at[11:16] if len(event.starts_at) >= 16 else "күні бойы"
-            lines.append(f"• {when} {event.title}")
-
-    return lines
 
 
 def record_digest_sent(db: Session, now: datetime) -> None:

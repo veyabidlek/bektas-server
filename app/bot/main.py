@@ -123,22 +123,12 @@ def _tick(tg: TelegramClient, owner: int) -> None:
     db = SessionLocal()
     try:
         for due in scheduler.due_reminders(scheduler.pending_events(db, now), now):
-            tg.send_message(
-                owner,
-                copy.REMINDER_FIRE.format(
-                    title=due.title,
-                    when=due.starts_at[11:16] if len(due.starts_at) >= 16 else due.starts_at[:10],
-                ),
-            )
+            tg.send_message(owner, copy.reminder_fire(due.title, due.starts_at))
             # Marked only after the send, so a failure retries next minute.
             scheduler.mark_fired(db, due.event_id, now)
 
         if _digest_enabled() and scheduler.should_send_digest(now, scheduler.last_digest_day(db)):
-            lines = scheduler.digest_lines(db, now)
-            tg.send_message(
-                owner,
-                f"<b>{copy.DIGEST_TITLE}</b>\n" + "\n".join(lines) if lines else copy.DIGEST_EMPTY,
-            )
+            tg.send_message(owner, scheduler.digest_message(db, now))
             scheduler.record_digest_sent(db, now)
     finally:
         db.close()

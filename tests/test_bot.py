@@ -191,7 +191,8 @@ def test_a_button_triages_through_the_same_service_as_the_web(db):
 
     item = inbox_svc.list_items(db)[0]
     assert item.triaged_kind == "article"
-    assert "Draft note created" in tg.answers[-1]
+    # The flow ends settled: the prompt is replaced by the Note card.
+    assert tg.edits[-1] == "📝 <b>написать пост</b>\nDraft note · private"
 
 
 def test_a_task_button_asks_for_a_due_date_then_sets_it(db):
@@ -202,6 +203,7 @@ def test_a_task_button_asks_for_a_due_date_then_sets_it(db):
     handlers.handle_callback(db, tg, _callback(f"k:task:{item_id}"), OWNER)
     labels = [b["text"] for b in tg.sent[-1]["buttons"][0]]
     assert labels == ["Today", "Tomorrow", "Next week"]
+    assert tg.sent[-1]["text"] == "Due when?"
     # Still untriaged until he answers.
     assert inbox_svc.list_items(db)[0].triaged_kind is None
 
@@ -223,7 +225,7 @@ def test_pressing_a_triage_button_twice_says_so_instead_of_duplicating(db):
     handlers.handle_callback(db, tg, _callback(f"g:dismissed:{item_id}"), OWNER)
     handlers.handle_callback(db, tg, _callback(f"g:task:{item_id}"), OWNER)
 
-    assert "already been triaged" in tg.answers[-1]
+    assert "Already filed." in tg.answers[-1]
 
 
 # --- the fold-in ----------------------------------------------------------
@@ -270,3 +272,130 @@ def test_a_captured_photo_follows_the_thought_into_the_diary(db, tmp_path, monke
     entry = diary_svc.get_entry(db, day)
     assert len(entry.images) == 1
     assert "бүгінгі сурет" in entry.body_md
+
+
+# --- rendered message formats (the site's vocabulary, in chat) -------------
+
+
+def test_capture_ack_is_one_quiet_line_then_the_prompt(db):
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("a thought"), OWNER)
+    assert tg.sent[0]["text"] == "📥 Saved to Inbox\nFile it as:"
+
+
+def test_the_buttons_use_the_site_s_words(db):
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("x"), OWNER)
+    labels = [b["text"] for row in tg.sent[0]["buttons"] for b in row]
+    assert labels == ["Task", "Event", "Note", "Diary", "✕"]
+
+
+def test_an_event_confirmation_reads_like_the_site_s_event_card(db):
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("напомни 9.08 в 15:00 позвонить"), OWNER)
+
+    text = tg.sent[0]["text"]
+    lines = text.split("\n")
+    assert lines[0] == "📅 <b>позвонить</b>"
+    assert lines[1].startswith("📅 ")
+    assert " · 15:00" in lines[1]
+    assert lines[2] == "⏰ Reminder at the time"
+
+
+def test_a_task_confirmation_shows_its_due_chip(db):
+    from app.services import tasks as tasks_svc
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("сходить к врачу"), OWNER)
+    item_id = inbox_svc.list_items(db)[0].id
+
+    handlers.handle_callback(db, tg, _callback(f"k:task:{item_id}"), OWNER)
+    handlers.handle_callback(db, tg, _callback(f"d:task:{item_id}:today"), OWNER)
+
+    assert tg.edits[-1] == "✅ <b>сходить к врачу</b>\nDue: Today"
+
+    # And tomorrow reads as Tomorrow, not as a date.
+    handlers.handle_message(db, tg, _message("another"), OWNER)
+    second = inbox_svc.list_items(db)[0].id
+    handlers.handle_callback(db, tg, _callback(f"d:task:{second}:tomorrow"), OWNER)
+    assert tg.edits[-1].endswith("Due: Tomorrow")
+
+
+def test_diary_confirmation_names_the_day(db):
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("today's thought"), OWNER)
+    item_id = inbox_svc.list_items(db)[0].id
+
+    handlers.handle_callback(db, tg, _callback(f"g:diary:{item_id}"), OWNER)
+    assert tg.edits[-1].startswith("📔 Added to your Diary\n")
+
+
+def test_start_is_a_scannable_onboarding_with_both_reminder_examples(db):
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("/start"), OWNER)
+    text = tg.sent[0]["text"]
+
+    for lead in ("<b>Capture</b>", "<b>Reminders</b>", "<b>Every morning</b>"):
+        assert lead in text
+    # One Russian example and one Kazakh one.
+    assert "remind me tomorrow at 15:00" in text
+    assert "ертең сағат 15:00" in text
+    # The site's four destinations, named the same way.
+    for word in ("Task", "Event", "Note", "Diary", "Inbox"):
+        assert word in text
+
+
+def test_the_digest_is_laid_out_like_the_dashboard():
+    from app.bot import copy
+
+    text = copy.digest(
+        today_iso="2026-08-08",
+        events=[("09:00", "Standup"), (None, "Holiday")],
+        tasks=["Renew the domain"],
+        overdue=2,
+        inbox=3,
+    )
+    assert text.split("\n")[0] == "<b>Today</b>"
+    assert "📅 <b>Events</b>" in text
+    assert "09:00 · Standup" in text
+    assert "— · Holiday" in text          # all-day keeps its place in the timeline
+    assert "✅ <b>Tasks</b> · 1 due" in text
+    assert "• Renew the domain" in text
+    assert "⚠️ 2 overdue" in text
+    assert "📥 <b>Inbox</b> · 3 to triage" in text
+
+
+def test_an_empty_digest_says_so_without_empty_sections():
+    from app.bot import copy
+
+    text = copy.digest("2026-08-08", [], [], 0, 0)
+    assert "Nothing scheduled" in text
+    for absent in ("Events", "Tasks", "Inbox"):
+        assert absent not in text
+
+
+def test_the_digest_drops_sections_that_are_empty():
+    from app.bot import copy
+
+    text = copy.digest("2026-08-08", [("10:00", "Only event")], [], 0, 0)
+    assert "📅 <b>Events</b>" in text
+    assert "Tasks" not in text
+    assert "Inbox" not in text
+
+
+def test_a_fired_reminder_leads_with_the_title():
+    from app.bot import copy
+
+    assert copy.reminder_fire("Dentist", "2026-08-09T15:00:00+05:00") == (
+        "⏰ <b>Dentist</b>\n15:00"
+    )
+
+
+def test_the_due_chip_matches_the_site_s_wording():
+    from app.bot import copy
+
+    assert copy.due_chip("2026-08-08", "2026-08-08") == "Due: Today"
+    assert copy.due_chip("2026-08-09", "2026-08-08") == "Due: Tomorrow"
+    assert copy.due_chip("2026-08-20", "2026-08-08") == "Due: 20 Aug"
+    assert copy.due_chip("2026-08-20T14:30:00+05:00", "2026-08-08") == "Due: 20 Aug · 14:30"
+    assert copy.due_chip(None, "2026-08-08") == "No due date"

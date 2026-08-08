@@ -94,9 +94,10 @@ def handle_message(db: Session, tg: TelegramClient, message: dict, chat_id: int)
             inbox_svc.add_image(db, item, data, "image/jpeg")
             saved_photo = True
 
+    ack = copy.CAPTURED_PHOTO if saved_photo else copy.CAPTURED
     tg.send_message(
         chat_id,
-        f"{copy.CAPTURED_PHOTO if saved_photo else copy.CAPTURED}\n{copy.TRIAGE_PROMPT}",
+        f"{ack}\n{copy.TRIAGE_PROMPT}",
         buttons=_triage_buttons(item.id),
         reply_to=message.get("message_id"),
     )
@@ -122,10 +123,11 @@ def _create_reminder(db, tg, chat_id, reminder, original: str) -> None:
             reminder_minutes=reminder.reminder_minutes,
         ),
     )
-    when = _human_time(reminder.starts_at)
     tg.send_message(
         chat_id,
-        copy.REMINDER_SET.format(when=when, title=reminder.title),
+        copy.event_confirmation(
+            reminder.title, reminder.starts_at, reminder.reminder_minutes
+        ),
         buttons=[
             [
                 button(copy.BTN_CONFIRM, f"rc:{event.id}"),
@@ -133,12 +135,6 @@ def _create_reminder(db, tg, chat_id, reminder, original: str) -> None:
             ]
         ],
     )
-
-
-def _human_time(iso: str) -> str:
-    if len(iso) >= 16:
-        return f"{iso[:10]} {iso[11:16]}"
-    return iso[:10]
 
 
 def handle_callback(db: Session, tg: TelegramClient, query: dict, chat_id: int) -> None:
@@ -189,14 +185,16 @@ def _ask_when(tg, chat_id, message_id, callback_id, kind: str, item_id: str) -> 
             button(copy.BTN_TOMORROW, f"d:task:{item_id}:tomorrow"),
             button(copy.BTN_WEEK, f"d:task:{item_id}:week"),
         ]
+        prompt = copy.WHEN_PROMPT_TASK
     else:
         options = [
-            button("Бүгін 18:00", f"d:event:{item_id}:today18"),
-            button("Ертең 09:00", f"d:event:{item_id}:tom09"),
-            button("Ертең 18:00", f"d:event:{item_id}:tom18"),
+            button("Today 18:00", f"d:event:{item_id}:today18"),
+            button("Tomorrow 09:00", f"d:event:{item_id}:tom09"),
+            button("Tomorrow 18:00", f"d:event:{item_id}:tom18"),
         ]
+        prompt = copy.WHEN_PROMPT_EVENT
 
-    tg.send_message(chat_id, copy.TRIAGE_PROMPT, buttons=[options])
+    tg.send_message(chat_id, prompt, buttons=[options])
 
 
 def _when_to_values(when: str) -> dict:
@@ -226,22 +224,41 @@ def _do_triage(
     values = _when_to_values(when) if when else {}
 
     try:
-        inbox_svc.triage_item(db, item, kind, **values)
+        _, target_id = inbox_svc.triage_item(db, item, kind, **values)
     except triage.TriageError:
         tg.answer_callback(callback_id, copy.ALREADY_TRIAGED)
         return
 
-    done = {
-        "task": copy.DONE_TASK,
-        "event": copy.DONE_EVENT,
-        "article": copy.DONE_ARTICLE,
-        "diary": copy.DONE_DIARY,
-        "dismissed": copy.DONE_DISMISS,
-    }.get(kind, copy.DONE_TASK)
-
-    tg.answer_callback(callback_id, done)
+    tg.answer_callback(callback_id)
     if message_id:
-        tg.edit_message(chat_id, message_id, done)
+        tg.edit_message(chat_id, message_id, _confirmation(db, kind, target_id, item))
+
+
+def _confirmation(db, kind: str, target_id: str | None, item) -> str:
+    """The settled state a flow ends in — the site's card, as a message."""
+    from app.models.calendar import CalendarEvent
+    from app.models.task import Task
+    from app.services import tasks as tasks_svc
+
+    if kind == "task" and target_id:
+        task = db.query(Task).filter(Task.id == target_id).first()
+        if task:
+            return copy.task_confirmation(task.title, task.due_at, tasks_svc.today())
+    if kind == "event" and target_id:
+        event = db.query(CalendarEvent).filter(CalendarEvent.id == target_id).first()
+        if event:
+            return copy.event_confirmation(
+                event.title, event.starts_at, event.reminder_minutes
+            )
+    if kind == "article" and target_id:
+        from app.models.article import Article
+
+        article = db.query(Article).filter(Article.slug == target_id).first()
+        if article:
+            return copy.note_confirmation(article.title)
+    if kind == "diary" and target_id:
+        return copy.diary_confirmation(target_id)
+    return copy.DONE_DISMISS
 
 
 def _undo_reminder(db, tg, chat_id, message_id, callback_id, event_id: str) -> None:
