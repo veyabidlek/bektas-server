@@ -41,6 +41,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # Added 2026-08-08, after Bektas had already written entries — create_all()
     # would have left the existing table untouched.
     ("diary_entries", "title", "VARCHAR NOT NULL DEFAULT ''"),
+    # Set once the Telegram bot has pinged about an event, so a restart cannot
+    # double-send. Added 2026-08-08 when the table already had rows.
+    ("calendar_events", "reminder_fired_at", "VARCHAR"),
 ]
 
 

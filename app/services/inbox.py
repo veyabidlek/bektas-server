@@ -19,11 +19,14 @@ from app.schemas.calendar import CalendarEventCreate
 from app.schemas.inbox import InboxImageOut, InboxItemOut
 from app.schemas.task import TaskCreate
 from app.services import calendar as calendar_svc
+from app.services import article_images as article_images_svc
 from app.services import diary as diary_svc
 from app.services import inbox_triage as triage
 from app.services import tasks as tasks_svc
 from app.services.calendar import ASTANA
 from app.services.image_optimize import dimensions, optimize_image
+from app.models.article_image import ArticleImage
+from app.models.diary import DiaryImage
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads")) / "inbox"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -182,6 +185,65 @@ def delete_image(db: Session, image_id: str) -> bool:
 # --- triage ---
 
 
+def _copy_images_to(db: Session, item: InboxItem, kind: str, owner: str) -> list[str]:
+    """Copy an item's photos into whatever it became.
+
+    A thought captured *with* a picture should land complete — before this the
+    photo stayed behind in the inbox and the new writing or diary entry quietly
+    lost it. The bytes are copied, not moved, so the inbox history still renders.
+
+    Returns the URLs of the copies, for embedding in a markdown body.
+    """
+    urls: list[str] = []
+
+    for index, image in enumerate(item.images):
+        source = UPLOAD_DIR / image.filename
+        if not source.exists():
+            continue
+
+        data = source.read_bytes()
+        ext = image.filename.rsplit(".", 1)[-1]
+        new_id = uuid.uuid4().hex[:12]
+
+        if kind == "article":
+            target_dir = article_images_svc.UPLOAD_DIR
+            filename = f"{owner}-{new_id}.{ext}"
+            row = ArticleImage(
+                id=new_id,
+                article_slug=owner,
+                filename=filename,
+                content_type=image.content_type,
+                width=image.width,
+                height=image.height,
+                size_bytes=image.size_bytes,
+                created_at=_now(),
+            )
+            urls.append(f"/api/articles/images/{new_id}")
+        else:
+            target_dir = diary_svc.UPLOAD_DIR
+            filename = f"{owner}-{new_id}.{ext}"
+            row = DiaryImage(
+                id=new_id,
+                day=owner,
+                filename=filename,
+                content_type=image.content_type,
+                width=image.width,
+                height=image.height,
+                size_bytes=image.size_bytes,
+                sort_order=index,
+                created_at=_now(),
+            )
+            urls.append(f"/api/diary/images/{new_id}")
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / filename).write_bytes(data)
+        db.add(row)
+
+    if urls:
+        db.commit()
+    return urls
+
+
 def _mark(db: Session, item: InboxItem, ref: str) -> InboxItem:
     item.triaged_to = ref
     item.triaged_at = _now()
@@ -266,6 +328,14 @@ def triage_item(
         )
         db.add(article)
         db.commit()
+
+        # The photos come along, and are embedded so they actually show.
+        urls = _copy_images_to(db, item, "article", slug)
+        if urls:
+            embedded = "\n\n".join(f"![]({url})" for url in urls)
+            article.body_md = f"{article.body_md}\n\n{embedded}".strip()
+            db.commit()
+
         return _mark(db, item, triage.make_ref("article", slug)), slug
 
     # diary: append to today's entry rather than replacing it.
@@ -274,4 +344,6 @@ def triage_item(
     body = entry.body_md.strip()
     appended = f"{body}{DIARY_SEPARATOR}{item.text}" if body else item.text
     diary_svc.upsert_entry(db, day, appended, entry.title)
+    # Attached to the day itself, where the diary renders its photo grid.
+    _copy_images_to(db, item, "diary", day)
     return _mark(db, item, triage.make_ref("diary", day)), day

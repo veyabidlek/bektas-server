@@ -24,5 +24,7 @@ class CalendarEvent(Base):
     reminder_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Set once the event has been mirrored into Google Calendar.
     google_event_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Set once the Telegram bot has pinged about it — idempotency across restarts.
+    reminder_fired_at: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
