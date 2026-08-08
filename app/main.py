@@ -14,6 +14,7 @@ from app.routers import (
     calendar,
     diary,
     friends,
+    inbox,
     habits,
     pomodoro,
     portfolio,
@@ -51,6 +52,7 @@ app.include_router(friends.router)
 app.include_router(calendar.router)
 app.include_router(diary.router)
 app.include_router(tasks.router)
+app.include_router(inbox.router)
 
 
 @app.get("/")

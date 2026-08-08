@@ -11,6 +11,7 @@ from app.models.calendar import CalendarEvent
 from app.models.setting import Setting
 from app.models.diary import DiaryEntry, DiaryImage
 from app.models.task import Task
+from app.models.inbox import InboxItem, InboxImage
 
 __all__ = [
     "Article", "Comment", "ArticleImage",
@@ -25,4 +26,5 @@ __all__ = [
     "Setting",
     "DiaryEntry", "DiaryImage",
     "Task",
+    "InboxItem", "InboxImage",
 ]

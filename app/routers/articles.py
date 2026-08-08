@@ -82,6 +82,18 @@ def update_article(
     return svc.get_article(db, slug)
 
 
+@router.delete("/{slug}", status_code=204)
+def delete_article(
+    slug: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """Permanent. Archiving is the reversible option; this removes the row,
+    its comments and its photo files."""
+    if not svc.delete_article(db, slug):
+        raise HTTPException(status_code=404, detail="Article not found")
+
+
 @router.patch("/{slug}/archive")
 def toggle_archive(
     slug: str,

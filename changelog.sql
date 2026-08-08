@@ -253,3 +253,40 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at VARCHAR NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_tasks_due_at ON tasks (due_at);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 007 — Quick-capture inbox (phase 2)
+-- Date: 2026-08-08
+--
+-- New tables, created by create_all() at startup. Admin-only, images included.
+-- -----------------------------------------------------------------------------
+
+-- A stray thought caught before it is decided about. `triaged_to` records what
+-- it became — 'task:<id>' | 'article:<slug>' | 'event:<id>' | 'diary:<day>' |
+-- 'dismissed' — as ONE string, so a new triage target costs no migration.
+-- `source` follows tasks.source: 'web' now, 'telegram' when the bot lands.
+CREATE TABLE IF NOT EXISTS inbox_items (
+    id         VARCHAR PRIMARY KEY,
+    text       TEXT    NOT NULL DEFAULT '',
+    source     VARCHAR NOT NULL DEFAULT 'web',
+    triaged_to VARCHAR,
+    triaged_at VARCHAR,
+    created_at VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_inbox_items_triaged_to ON inbox_items (triaged_to);
+
+-- Photos captured with an item. Bytes on the volume at /data/uploads/inbox.
+CREATE TABLE IF NOT EXISTS inbox_images (
+    id           VARCHAR PRIMARY KEY,
+    item_id      VARCHAR NOT NULL REFERENCES inbox_items(id) ON DELETE CASCADE,
+    filename     VARCHAR NOT NULL,
+    content_type VARCHAR NOT NULL,
+    width        INTEGER,
+    height       INTEGER,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    created_at   VARCHAR NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_inbox_images_item_id ON inbox_images (item_id);

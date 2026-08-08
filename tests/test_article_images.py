@@ -180,3 +180,24 @@ def test_a_non_image_is_rejected(client, auth):
         files={"files": ("notes.txt", b"hello", "text/plain")},
     )
     assert res.status_code == 415
+
+
+def test_deleting_a_writing_takes_its_photos_off_the_disk(client, auth):
+    """Fold-in: writings had no delete endpoint, so images could outlive nothing."""
+    slug = _article(client, auth, "doomed", "public")
+    image_id = _attach(client, auth, slug)
+    assert len(list(svc.UPLOAD_DIR.iterdir())) == 1
+
+    # A comment too, to prove the cascade covers them.
+    client.post(f"/api/articles/{slug}/comments", json={"author": "A", "body": "hi"})
+
+    assert client.delete(f"/api/articles/{slug}", headers=auth).status_code == 204
+    assert client.get(f"/api/articles/{slug}", headers=auth).status_code == 404
+    assert client.get(f"/api/articles/images/{image_id}", headers=auth).status_code == 404
+    assert list(svc.UPLOAD_DIR.iterdir()) == []
+
+
+def test_deleting_a_writing_is_admin_only_and_404s_when_absent(client, auth):
+    anon = client.__class__(client.app)
+    assert anon.delete("/api/articles/whatever").status_code == 401
+    assert client.delete("/api/articles/does-not-exist", headers=auth).status_code == 404

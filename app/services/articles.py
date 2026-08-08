@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.article import Article, Comment
+from app.models.article_image import ArticleImage
 from app.schemas.article import ArticleCreate, ArticleUpdate, CommentCreate
+from app.services import article_images
 
 
 def list_articles(
@@ -68,6 +70,29 @@ def archive_article(db: Session, slug: str, archived: bool) -> Article | None:
     db.commit()
     db.refresh(article)
     return article
+
+
+def delete_article(db: Session, slug: str) -> bool:
+    """Remove a writing, its comments and its photos — files included.
+
+    Mirrors the diary's cascade: leaving image files on the volume after their
+    parent is gone would slowly fill the disk with bytes nothing can reach.
+    """
+    article = db.query(Article).filter(Article.slug == slug).first()
+    if not article:
+        return False
+
+    for image in db.query(ArticleImage).filter(ArticleImage.article_slug == slug).all():
+        try:
+            (article_images.UPLOAD_DIR / image.filename).unlink(missing_ok=True)
+        except OSError:
+            pass  # a missing file must not block the delete
+        db.delete(image)
+
+    db.query(Comment).filter(Comment.article_slug == slug).delete()
+    db.delete(article)
+    db.commit()
+    return True
 
 
 def add_comment(db: Session, slug: str, data: CommentCreate) -> Comment:
