@@ -142,3 +142,50 @@ CREATE TABLE IF NOT EXISTS friends (
     last_seen_at VARCHAR,
     revoked      BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 004 — Key-file admin login, private calendar, Google sync
+-- Date: 2026-08-08
+--
+-- New tables are created by create_all() at startup; no ALTERs this time, so
+-- ensure_columns() has nothing to add. Recorded here for the human history.
+--
+-- The passcode login is GONE. ADMIN_PASSCODE is no longer read by the app —
+-- login now means presenting the contents of bekonai.key (uploaded or pasted).
+-- Re-issue with:  python -m app.issue_key > bekonai.key
+-- -----------------------------------------------------------------------------
+
+-- Admin credential files. Only the SHA-256 of the secret is stored, so this
+-- table is not a copy of the credential. Issuing a new key revokes all others.
+CREATE TABLE IF NOT EXISTS admin_keys (
+    id           VARCHAR PRIMARY KEY,
+    secret_hash  VARCHAR NOT NULL,
+    issued_at    VARCHAR NOT NULL,
+    revoked      BOOLEAN NOT NULL DEFAULT FALSE,
+    last_used_at VARCHAR
+);
+
+-- Bektas's private calendar. No `visibility` column on purpose: every route is
+-- admin-only, there is no public tier for this data.
+-- Times are ISO 8601 strings carrying an explicit Asia/Almaty offset.
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id               VARCHAR PRIMARY KEY,
+    title            VARCHAR NOT NULL,
+    starts_at        VARCHAR NOT NULL,
+    ends_at          VARCHAR,
+    all_day          BOOLEAN NOT NULL DEFAULT FALSE,
+    notes            TEXT    NOT NULL DEFAULT '',
+    reminder_minutes INTEGER,
+    google_event_id  VARCHAR,
+    created_at       VARCHAR NOT NULL,
+    updated_at       VARCHAR NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_calendar_events_starts_at ON calendar_events (starts_at);
+
+-- Small key/value store for server-side state that is not a domain object:
+-- the Google OAuth refresh token, when it was connected, the last sync error.
+CREATE TABLE IF NOT EXISTS settings (
+    key   VARCHAR PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
