@@ -168,3 +168,66 @@ def test_a_reminder_with_nothing_left_still_gets_a_title():
 def test_the_reminder_fires_at_the_event_time():
     """"Remind me at 15:00" must ping at 15:00, not fifteen minutes before."""
     assert parsed("напомни завтра в 15:00 X").reminder_minutes == 0
+
+
+# --- English -------------------------------------------------------------
+#
+# The onboarding advertises an English example, so the parser has to honour it.
+# Found the hard way: Bektas's first real message was "reminde me about ronaldo
+# tomorrow 10:00" and it fell through to a plain inbox item.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "remind me tomorrow at 15:00 to call mum",
+        "Remind me tomorrow at 15:00 to call mum",
+        "reminder tomorrow at 15:00 call mum",
+        # A typo in the verb should not lose the reminder.
+        "reminde me tomorrow at 15:00 call mum",
+    ],
+)
+def test_english_intent_is_recognised(text):
+    assert parsed(text) is not None
+
+
+def test_english_tomorrow_and_today():
+    assert parsed("remind me tomorrow at 15:00 call mum").starts_at == (
+        "2026-08-13T15:00:00+05:00"
+    )
+    assert parsed("remind me today at 15:00 call mum").starts_at == (
+        "2026-08-12T15:00:00+05:00"
+    )
+
+
+def test_the_message_that_actually_arrived():
+    """His real first message, verbatim."""
+    result = parsed("reminde me about ronaldo tomorrow 10:00")
+    assert result is not None
+    assert result.starts_at == "2026-08-13T10:00:00+05:00"
+    assert result.title == "ronaldo"
+
+
+def test_english_am_pm():
+    assert parsed("remind me tomorrow at 3pm to call").starts_at[11:16] == "15:00"
+    assert parsed("remind me tomorrow at 9am to call").starts_at[11:16] == "09:00"
+    assert parsed("remind me tomorrow at 12am to call").starts_at[11:16] == "00:00"
+    assert parsed("remind me tomorrow at 12pm to call").starts_at[11:16] == "12:00"
+    assert parsed("remind me tomorrow at 7:30pm to call").starts_at[11:16] == "19:30"
+
+
+def test_english_weekday_means_the_next_one():
+    assert parsed("remind me on friday at 12:00 to collect the parcel").starts_at == (
+        "2026-08-14T12:00:00+05:00"
+    )
+
+
+def test_day_after_tomorrow_in_english():
+    assert parsed("remind me the day after tomorrow at 09:00 to file it").starts_at == (
+        "2026-08-14T09:00:00+05:00"
+    )
+
+
+def test_english_titles_drop_the_filler_words():
+    assert parsed("remind me tomorrow at 15:00 to call mum").title == "call mum"
+    assert parsed("remind me about the invoice tomorrow").title == "the invoice"

@@ -22,6 +22,9 @@ DEFAULT_HOUR = 9
 FALLBACK_TITLE = "Еске салу"
 
 # Phrases that mean "remind me". Longest first so «еске сал» wins over «сал».
+# `remind\w*` is deliberately loose: the first real message this bot ever got
+# was "reminde me about ronaldo tomorrow 10:00", and a typo in the verb should
+# not cost him the reminder.
 INTENT_PATTERNS = [
     r"напомнить",
     r"напоминай",
@@ -29,34 +32,41 @@ INTENT_PATTERNS = [
     r"еске\s+салшы",
     r"еске\s+сал(?:ып\s+қой)?",
     r"ескерт(?:ші|іп\s+қой)?",
+    r"remind\w*(?:\s+me)?",
 ]
 
+# Order matters: "day after tomorrow" has to be tried before "tomorrow".
 RELATIVE_DAYS = {
     "послезавтра": 2,
     "бүрсігүні": 2,
+    "day after tomorrow": 2,
     "завтра": 1,
     "ертең": 1,
+    "tomorrow": 1,
     "сегодня": 0,
     "бүгін": 0,
+    "today": 0,
 }
 
 # Monday = 0, to match datetime.weekday().
 WEEKDAYS = {
-    "понедельник": 0, "дүйсенбі": 0,
-    "вторник": 1, "сейсенбі": 1,
-    "среду": 2, "среда": 2, "сәрсенбі": 2,
-    "четверг": 3, "бейсенбі": 3,
-    "пятницу": 4, "пятница": 4, "жұма": 4,
-    "субботу": 5, "суббота": 5, "сенбі": 5,
-    "воскресенье": 6, "жексенбі": 6,
+    "понедельник": 0, "дүйсенбі": 0, "monday": 0,
+    "вторник": 1, "сейсенбі": 1, "tuesday": 1,
+    "среду": 2, "среда": 2, "сәрсенбі": 2, "wednesday": 2,
+    "четверг": 3, "бейсенбі": 3, "thursday": 3,
+    "пятницу": 4, "пятница": 4, "жұма": 4, "friday": 4,
+    "субботу": 5, "суббота": 5, "сенбі": 5, "saturday": 5,
+    "воскресенье": 6, "жексенбі": 6, "sunday": 6,
 }
 
-EVENING_WORDS = ("вечера", "вечером", "кешке", "кеште")
-MORNING_WORDS = ("утра", "утром", "таңертең", "таңда")
+EVENING_WORDS = ("вечера", "вечером", "кешке", "кеште", "evening", "tonight")
+MORNING_WORDS = ("утра", "утром", "таңертең", "таңда", "morning")
 
 # Words that carry no meaning once the date and time are extracted.
 NOISE = (
     "сағат", "күні", "мне", "в", "на", "о", "об", "что", "чтобы",
+    # Articles stay: "the invoice" is a better title than "invoice".
+    "me", "at", "on", "to", "about", "that", "i",
 )
 
 
@@ -80,8 +90,24 @@ def _has_intent(text: str) -> re.Match | None:
 
 def _extract_time(text: str) -> tuple[int, int, str] | None:
     """(hour, minute, remaining text) or None."""
+    # "3pm", "7:30pm", "at 9am" — checked first, because the bare-hour pattern
+    # below would otherwise take the 3 and leave the pm behind.
+    match = re.search(
+        r"\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text, re.IGNORECASE
+    )
+    if match:
+        hour = int(match.group(1))
+        minute = int(match.group(2) or 0)
+        is_pm = match.group(3).lower() == "pm"
+        if hour < 24 and minute < 60:
+            if is_pm and hour < 12:
+                hour += 12
+            elif not is_pm and hour == 12:
+                hour = 0
+            return hour, minute, text[: match.start()] + " " + text[match.end() :]
+
     # 15:00 / 15.30 — an explicit minute.
-    match = re.search(r"\b(?:в|сағат)?\s*(\d{1,2})[:.](\d{2})\b", text, re.IGNORECASE)
+    match = re.search(r"\b(?:в|сағат|at)?\s*(\d{1,2})[:.](\d{2})\b", text, re.IGNORECASE)
     if match:
         hour, minute = int(match.group(1)), int(match.group(2))
         if hour < 24 and minute < 60:
@@ -90,7 +116,7 @@ def _extract_time(text: str) -> tuple[int, int, str] | None:
     # «в 15», «сағат 15», «сағат 15те» — a bare hour, but only where a marker
     # says it is a time. A loose number would swallow "позвонить 2 раза".
     match = re.search(
-        r"(?:\bв\b|\bсағат\b)\s*(\d{1,2})(?:\s*(?:те|та|де|да|ке|қа))?\b",
+        r"(?:\bв\b|\bсағат\b|\bat\b)\s*(\d{1,2})(?:\s*(?:те|та|де|да|ке|қа))?\b",
         text,
         re.IGNORECASE,
     )
