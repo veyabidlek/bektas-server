@@ -8,6 +8,7 @@ from app.models.friend import Friend
 from app.models.admin_key import AdminKey
 from app.models.calendar import CalendarEvent
 from app.models.setting import Setting
+from app.models.diary import DiaryEntry, DiaryImage
 
 __all__ = [
     "Article", "Comment",
@@ -20,4 +21,5 @@ __all__ = [
     "AdminKey",
     "CalendarEvent",
     "Setting",
+    "DiaryEntry", "DiaryImage",
 ]

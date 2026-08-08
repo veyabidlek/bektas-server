@@ -43,6 +43,18 @@ Follow this exact pattern (habits is the reference implementation):
 - `changelog.sql` is the human-readable schema history — **update it whenever you add or alter a table**
 - Connection: `SUPABASE_DATABASE_URL` takes priority over `DATABASE_URL`
 
+## Uploads
+
+- Diary photos live at `/data/uploads/diary` — on the **named volume**, never in
+  the image layer (`up --build` would erase them) and never in SQLite.
+- Downscale on write with `app/services/image_optimize.py` (1600 px, q85). It is a
+  pure function on bytes with a lazy Pillow import and never fails an upload.
+- Private media is served through an **auth-checked route**, not a static mount.
+  A browser cannot put an Authorization header on an `<img>` — that is what the
+  HttpOnly `bk_admin` cookie is for; it rides along automatically.
+- `scripts/backup.sh` captures the database *and* `/data/uploads`. Anything new
+  stored on the volume has to be added there too.
+
 ## File size limits
 
 Keep service files under 150 lines. If a service grows beyond that, split by domain.

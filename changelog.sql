@@ -189,3 +189,39 @@ CREATE TABLE IF NOT EXISTS settings (
     key   VARCHAR PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 005 — Diary (one entry per day, with photos)
+-- Date: 2026-08-08
+--
+-- New tables, created by create_all() at startup. Admin-only at every route,
+-- images included — the photo bytes are served through an auth-checked route,
+-- never from a public static path.
+-- -----------------------------------------------------------------------------
+
+-- One row per day: the day IS the primary key, so writing the same date twice
+-- edits that entry instead of creating a second one.
+-- Body is markdown (`body_md`), the same format articles use.
+CREATE TABLE IF NOT EXISTS diary_entries (
+    day        VARCHAR PRIMARY KEY,  -- YYYY-MM-DD, Asia/Almaty
+    body_md    TEXT    NOT NULL DEFAULT '',
+    created_at VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
+
+-- Photo metadata only. The bytes live on the Docker volume at
+-- /data/uploads/diary — a database that grows by megabytes per photo would
+-- make every backup heavier for nothing.
+CREATE TABLE IF NOT EXISTS diary_images (
+    id           VARCHAR PRIMARY KEY,
+    day          VARCHAR NOT NULL REFERENCES diary_entries(day) ON DELETE CASCADE,
+    filename     VARCHAR NOT NULL,
+    content_type VARCHAR NOT NULL,
+    width        INTEGER,
+    height       INTEGER,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    created_at   VARCHAR NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_diary_images_day ON diary_images (day);

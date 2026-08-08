@@ -65,6 +65,22 @@ FastAPI backend for the personal website. PostgreSQL database, JWT admin auth.
 Times are ISO 8601 with an explicit **Asia/Almaty** offset. A datetime sent
 without an offset is read as Almaty local, not UTC.
 
+### Diary (admin only)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/diary/today` | admin | Today's entry (drives the dashboard card) |
+| GET | `/api/diary/entries` | admin | List entries, newest first, with previews |
+| GET | `/api/diary/entries/{day}` | admin | One day — 200 with `exists: false` when unwritten |
+| PUT | `/api/diary/entries/{day}` | admin | Upsert the day (same date = edit, never a duplicate) |
+| DELETE | `/api/diary/entries/{day}` | admin | Delete the day and its photos |
+| POST | `/api/diary/entries/{day}/images` | admin | Upload photos (multipart `files`) |
+| GET | `/api/diary/images/{id}` | admin | Serve a photo — private, auth-checked |
+| DELETE | `/api/diary/images/{id}` | admin | Delete a photo |
+
+Entry bodies are markdown (`body_md`), the same format articles use. Photos are
+downscaled to 1600 px / q85 on upload and stored on the Docker volume at
+`/data/uploads/diary` — never in the database and never on a public path.
+
 ### Admin
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
@@ -116,6 +132,7 @@ Runs on http://localhost:8000. Swagger docs at http://localhost:8000/docs.
 | `GOOGLE_OAUTH_CLIENT_ID` | — | Google Calendar sync; unset = sync disabled |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | — | Google Calendar sync |
 | `GOOGLE_REDIRECT_URI` | `https://bektas.app/api/calendar/google/callback` | Must match the OAuth client exactly |
+| `UPLOAD_DIR` | `/data/uploads` | Diary photos. MUST stay on the Docker volume |
 
 `ADMIN_PASSCODE` is gone — login is the key file (see below).
 
