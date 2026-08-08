@@ -5,3 +5,5 @@ pydantic==2.11.1
 psycopg2-binary==2.9.10
 python-dotenv==1.2.2
 PyJWT==2.10.1
+# Required for the key-file login: FastAPI needs it to parse multipart uploads.
+python-multipart==0.0.20

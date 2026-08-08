@@ -1,4 +1,4 @@
-from fastapi import Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -6,14 +6,28 @@ from app.services.admin import verify_token
 from app.services.friends import friend_id_from_token
 
 
-def require_admin(authorization: str = Header(default="")) -> None:
-    token = authorization.removeprefix("Bearer ").strip()
+def _bearer(authorization: str, cookie_token: str = "") -> str:
+    """The caller's token, from the Authorization header or the session cookie.
+
+    The client still sends the header (localStorage token), but the HttpOnly
+    cookie set at login is what survives a cleared localStorage — either proves
+    the same session.
+    """
+    return authorization.removeprefix("Bearer ").strip() or cookie_token.strip()
+
+
+def require_admin(
+    authorization: str = Header(default=""),
+    bk_admin: str = Cookie(default=""),
+) -> None:
+    token = _bearer(authorization, bk_admin)
     if not token or not verify_token(token):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def viewer_level(
     authorization: str = Header(default=""),
+    bk_admin: str = Cookie(default=""),
     db: Session = Depends(get_db),
 ) -> str:
     """How much of the site this caller may see.
@@ -22,7 +36,7 @@ def viewer_level(
     friend -> public + friends
     anyone -> public only
     """
-    token = authorization.removeprefix("Bearer ").strip()
+    token = _bearer(authorization, bk_admin)
     if not token:
         return "public"
     if verify_token(token):

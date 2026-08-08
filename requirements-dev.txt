@@ -1,0 +1,8 @@
+# Test-only dependencies. Deliberately NOT in requirements.txt — the production
+# image should not ship a test runner.
+#
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+#   .venv/bin/pytest
+-r requirements.txt
+pytest==8.3.4
+httpx==0.28.1

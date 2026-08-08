@@ -1,24 +1,35 @@
-import hmac
 import os
 import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
 from dotenv import load_dotenv
+from fastapi import Response
 
 load_dotenv()
 
-ADMIN_PASSCODE = os.getenv("ADMIN_PASSCODE")
 JWT_SECRET = os.getenv("JWT_SECRET")
 
-if not ADMIN_PASSCODE or not JWT_SECRET:
+if not JWT_SECRET:
     raise RuntimeError(
-        "ADMIN_PASSCODE and JWT_SECRET must be set in the environment. "
-        "Refusing to start with a default — that would leave admin open to anyone."
+        "JWT_SECRET must be set in the environment. Refusing to start with a "
+        "default — that would let anyone mint an admin token."
     )
 
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24
+
+# Bektas asked for a month-long session (2026-08-08): he logs in from a phone
+# with a key file, and re-uploading it every day would be miserable. The token
+# is signed with JWT_SECRET (which lives in .env, not in memory), so a container
+# restart does not sign anyone out.
+JWT_EXPIRY_DAYS = 30
+SESSION_MAX_AGE_SECONDS = JWT_EXPIRY_DAYS * 24 * 60 * 60
+
+# Mirrored into an HttpOnly cookie so the session survives a cleared
+# localStorage and is not readable by injected JavaScript.
+SESSION_COOKIE = "bk_admin"
+# Off only for local http development; prod is https end to end.
+COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() != "false"
 
 MAX_ATTEMPTS = 5
 BLOCK_DURATION_SECONDS = 15 * 60
@@ -57,18 +68,35 @@ def clear_attempts(ip: str) -> None:
     _rate_limits.pop(ip, None)
 
 
-def verify_passcode(passcode: str) -> bool:
-    # compare_digest, not ==, so the comparison time does not leak the prefix length
-    return hmac.compare_digest(passcode, ADMIN_PASSCODE)
-
-
 def create_token() -> str:
     payload = {
         "sub": "admin",
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
+        "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRY_DAYS),
         "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    """Persist the session for 30 days.
+
+    HttpOnly so injected script cannot read it, SameSite=Lax so it still rides
+    along on a normal navigation back to the site. Secure is on by default and
+    only switched off for local http development.
+    """
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_MAX_AGE_SECONDS,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 def verify_token(token: str) -> bool:

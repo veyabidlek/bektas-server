@@ -5,6 +5,7 @@ from app.models.about import ExperienceItem, SkillCategory, EducationItem
 from app.models.profile import Profile
 from app.models.portfolio import PortfolioProject
 from app.models.friend import Friend
+from app.models.admin_key import AdminKey
 
 __all__ = [
     "Article", "Comment",
@@ -14,4 +15,5 @@ __all__ = [
     "Profile",
     "PortfolioProject",
     "Friend",
+    "AdminKey",
 ]
