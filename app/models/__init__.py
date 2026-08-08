@@ -9,6 +9,7 @@ from app.models.admin_key import AdminKey
 from app.models.calendar import CalendarEvent
 from app.models.setting import Setting
 from app.models.diary import DiaryEntry, DiaryImage
+from app.models.task import Task
 
 __all__ = [
     "Article", "Comment",
@@ -22,4 +23,5 @@ __all__ = [
     "CalendarEvent",
     "Setting",
     "DiaryEntry", "DiaryImage",
+    "Task",
 ]

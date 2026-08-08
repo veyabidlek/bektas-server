@@ -17,6 +17,7 @@ from app.routers import (
     habits,
     pomodoro,
     portfolio,
+    tasks,
 )
 
 load_dotenv()
@@ -49,6 +50,7 @@ app.include_router(portfolio.router)
 app.include_router(friends.router)
 app.include_router(calendar.router)
 app.include_router(diary.router)
+app.include_router(tasks.router)
 
 
 @app.get("/")

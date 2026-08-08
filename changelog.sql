@@ -225,3 +225,31 @@ CREATE TABLE IF NOT EXISTS diary_images (
     created_at   VARCHAR NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_diary_images_day ON diary_images (day);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 006 — Tasks (phase 1 of the tasks/inbox/bot roadmap)
+-- Date: 2026-08-08
+--
+-- New table, created by create_all() at startup. Admin-only, like everything
+-- else added since the key-file login.
+-- -----------------------------------------------------------------------------
+
+-- due_at holds either a plain 'YYYY-MM-DD' (due that day, no particular time)
+-- or a full ISO datetime with the Almaty offset — the same two shapes the
+-- calendar uses, so tasks and events can share a day column without conversion.
+--
+-- `source` is deliberately a free string, not an enum: the telegram and inbox
+-- phases will add values ('telegram', 'inbox') and must not need a migration.
+CREATE TABLE IF NOT EXISTS tasks (
+    id         VARCHAR PRIMARY KEY,
+    title      VARCHAR NOT NULL,
+    notes      TEXT    NOT NULL DEFAULT '',
+    due_at     VARCHAR,
+    done       BOOLEAN NOT NULL DEFAULT FALSE,
+    done_at    VARCHAR,
+    source     VARCHAR NOT NULL DEFAULT 'web',
+    created_at VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_tasks_due_at ON tasks (due_at);
