@@ -92,7 +92,13 @@ def test_calendar_is_admin_only(client):
     ).status_code == 401
 
 
-def test_google_sync_degrades_gracefully_when_unconfigured(client, auth):
+def test_google_sync_degrades_gracefully_when_unconfigured(client, auth, monkeypatch):
+    # Explicitly unset rather than trusting the ambient environment: the app
+    # calls load_dotenv() at import, so a real .env on the developer's machine
+    # would otherwise make this assert the opposite of what it means to test.
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+
     status = client.get("/api/calendar/google/status", headers=auth)
     assert status.status_code == 200
     body = status.json()
