@@ -53,3 +53,16 @@ def visible_levels(level: str) -> list[str]:
     if level == "friend":
         return ["public", "friends"]
     return ["public"]
+
+
+def can_view(visibility: str, level: str) -> bool:
+    """May a viewer at `level` see something marked `visibility`?
+
+    The single rule behind every gated read, including a writing's photos —
+    an image must be exactly as reachable as the writing it belongs to, no
+    more and no less. An unknown visibility is treated as private: a typo in
+    the data should hide content, never expose it.
+    """
+    if visibility not in ("public", "friends", "private"):
+        return level == "admin"
+    return visibility in visible_levels(level)

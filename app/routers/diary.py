@@ -54,7 +54,7 @@ def put_entry(
     _: None = Depends(require_admin),
 ):
     """Upsert: writing the same day again edits it, never duplicates it."""
-    return svc.upsert_entry(db, _valid_day(day), data.body_md)
+    return svc.upsert_entry(db, _valid_day(day), data.body_md, data.title)
 
 
 @router.delete("/entries/{day}", status_code=204)

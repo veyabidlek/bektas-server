@@ -64,10 +64,11 @@ def get_entry(db: Session, day: str) -> DiaryEntryOut:
     so the editor can open on any date."""
     entry = db.query(DiaryEntry).filter(DiaryEntry.day == day).first()
     if not entry:
-        return DiaryEntryOut(day=day, body_md="", exists=False, images=[])
+        return DiaryEntryOut(day=day, title="", body_md="", exists=False, images=[])
 
     return DiaryEntryOut(
         day=entry.day,
+        title=entry.title or "",
         body_md=entry.body_md,
         exists=True,
         images=[_image_out(i) for i in entry.images],
@@ -76,16 +77,20 @@ def get_entry(db: Session, day: str) -> DiaryEntryOut:
     )
 
 
-def upsert_entry(db: Session, day: str, body_md: str) -> DiaryEntryOut:
+def upsert_entry(db: Session, day: str, body_md: str, title: str = "") -> DiaryEntryOut:
     """Write the day. Same date twice = an edit, never a duplicate."""
     entry = db.query(DiaryEntry).filter(DiaryEntry.day == day).first()
     now = _now()
+    clean_title = (title or "").strip()
 
     if entry:
+        entry.title = clean_title
         entry.body_md = body_md
         entry.updated_at = now
     else:
-        entry = DiaryEntry(day=day, body_md=body_md, created_at=now, updated_at=now)
+        entry = DiaryEntry(
+            day=day, title=clean_title, body_md=body_md, created_at=now, updated_at=now
+        )
         db.add(entry)
 
     db.commit()
@@ -97,7 +102,7 @@ def ensure_entry(db: Session, day: str) -> DiaryEntry:
     entry = db.query(DiaryEntry).filter(DiaryEntry.day == day).first()
     if not entry:
         now = _now()
-        entry = DiaryEntry(day=day, body_md="", created_at=now, updated_at=now)
+        entry = DiaryEntry(day=day, title="", body_md="", created_at=now, updated_at=now)
         db.add(entry)
         db.commit()
         db.refresh(entry)
@@ -113,6 +118,7 @@ def list_entries(db: Session, limit: int = 60, before: str | None = None) -> lis
     return [
         DiaryEntrySummary(
             day=e.day,
+            title=e.title or "",
             preview=_preview(e.body_md),
             image_count=len(e.images),
             updated_at=e.updated_at,

@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_admin, viewer_level, visible_levels
+from app.dependencies import can_view, require_admin, viewer_level, visible_levels
 from app.schemas.article import (
     ArticleCreate,
+    ArticleImageOut,
     ArticleOut,
     ArticleSummary,
     ArticleUpdate,
     CommentCreate,
     CommentOut,
 )
+from app.services import article_images as images_svc
 from app.services import articles as svc
+from app.services.image_optimize import ALLOWED_CONTENT_TYPES
 
 router = APIRouter(prefix="/api/articles", tags=["articles"])
 
@@ -111,3 +115,90 @@ def delete_comment(
     _: None = Depends(require_admin),
 ):
     svc.delete_comment(db, comment_id)
+
+
+# --- photos ---------------------------------------------------------------
+#
+# Upload and delete are admin-only. *Serving* is not: a photo has to be exactly
+# as reachable as the writing it belongs to, so the route resolves the parent's
+# visibility and asks `can_view`. A public writing's images load for a logged-out
+# reader; a private one's do not.
+
+
+@router.get("/{slug}/images", response_model=list[ArticleImageOut])
+def list_article_images(
+    slug: str,
+    db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
+):
+    article = svc.get_article(db, slug)
+    if not article or not can_view(article.visibility, level):
+        raise HTTPException(status_code=404, detail="Article not found")
+    return images_svc.list_images(db, slug)
+
+
+@router.post("/{slug}/images", response_model=list[ArticleImageOut], status_code=201)
+async def upload_article_images(
+    slug: str,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    article = svc.get_article(db, slug)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    saved: list[ArticleImageOut] = []
+    for upload in files:
+        content_type = (upload.content_type or "").lower()
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            raise HTTPException(
+                status_code=415, detail=f"Unsupported image type: {content_type or 'unknown'}"
+            )
+
+        data = await upload.read(images_svc.MAX_UPLOAD_BYTES + 1)
+        if len(data) > images_svc.MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"{upload.filename} is too large")
+        if not data:
+            continue
+
+        saved.append(images_svc.add_image(db, slug, data, content_type))
+
+    if not saved:
+        raise HTTPException(status_code=422, detail="No image uploaded")
+    return saved
+
+
+@router.get("/images/{image_id}")
+def serve_article_image(
+    image_id: str,
+    db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
+):
+    """Serve a writing's photo, mirroring that writing's visibility."""
+    image = images_svc.get_image(db, image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    visibility = images_svc.parent_visibility(db, image)
+    if not can_view(visibility, level):
+        # 404, not 403: a gated image should not confirm it exists.
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    path = images_svc.image_path(image)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Image file missing")
+
+    # A public image may sit in a shared cache; anything gated must not.
+    cache = "public, max-age=86400" if visibility == "public" else "private, max-age=86400"
+    return FileResponse(path, media_type=image.content_type, headers={"Cache-Control": cache})
+
+
+@router.delete("/images/{image_id}", status_code=204)
+def delete_article_image(
+    image_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    if not images_svc.delete_image(db, image_id):
+        raise HTTPException(status_code=404, detail="Image not found")

@@ -17,6 +17,8 @@ class DiaryEntry(Base):
     __tablename__ = "diary_entries"
 
     day: Mapped[str] = mapped_column(String, primary_key=True)  # YYYY-MM-DD, Almaty
+    # Optional — an entry is worth writing without one.
+    title: Mapped[str] = mapped_column(String, nullable=False, default="")
     body_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)

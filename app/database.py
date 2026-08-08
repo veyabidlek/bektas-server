@@ -38,6 +38,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("articles", "body_md", "TEXT NOT NULL DEFAULT ''"),
     ("projects", "visibility", "VARCHAR NOT NULL DEFAULT 'public'"),
     ("portfolio_projects", "visibility", "VARCHAR NOT NULL DEFAULT 'public'"),
+    # Added 2026-08-08, after Bektas had already written entries — create_all()
+    # would have left the existing table untouched.
+    ("diary_entries", "title", "VARCHAR NOT NULL DEFAULT ''"),
 ]
 
 

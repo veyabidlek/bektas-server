@@ -16,6 +16,16 @@ class CommentOut(BaseModel):
     body: str
 
 
+class ArticleImageOut(BaseModel):
+    id: str
+    article_slug: str
+    # Ready to paste into the markdown body as ![](url).
+    url: str
+    width: int | None = None
+    height: int | None = None
+    created_at: str
+
+
 class ArticleSummary(BaseModel):
     slug: str
     title: str

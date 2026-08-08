@@ -1,4 +1,5 @@
 from app.models.article import Article, Comment
+from app.models.article_image import ArticleImage
 from app.models.habit import Habit, HabitCompletion
 from app.models.pomodoro import Project, PomodoroSession
 from app.models.about import ExperienceItem, SkillCategory, EducationItem
@@ -12,7 +13,7 @@ from app.models.diary import DiaryEntry, DiaryImage
 from app.models.task import Task
 
 __all__ = [
-    "Article", "Comment",
+    "Article", "Comment", "ArticleImage",
     "Habit", "HabitCompletion",
     "Project", "PomodoroSession",
     "ExperienceItem", "SkillCategory", "EducationItem",

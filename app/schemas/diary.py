@@ -11,6 +11,7 @@ class DiaryImageOut(BaseModel):
 
 class DiaryEntryOut(BaseModel):
     day: str
+    title: str = ""
     body_md: str = ""
     # False when the day has never been written. The GET still returns 200 with
     # an empty shell so the editor can open on any date without special-casing.
@@ -22,10 +23,12 @@ class DiaryEntryOut(BaseModel):
 
 class DiaryEntrySummary(BaseModel):
     day: str
+    title: str = ""
     preview: str
     image_count: int
     updated_at: str
 
 
 class DiaryEntryUpdate(BaseModel):
+    title: str = ""
     body_md: str = ""

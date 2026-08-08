@@ -172,3 +172,34 @@ def test_everything_is_admin_only_including_the_images(client, auth):
     assert anon.get(f"/api/diary/images/{image_id}").status_code == 401
     assert anon.delete(f"/api/diary/images/{image_id}").status_code == 401
     assert anon.post(f"/api/diary/entries/{day}/images").status_code == 401
+
+
+def test_entry_title_is_optional_and_survives_a_rewrite(client, auth):
+    day = "2026-08-14"
+
+    # An entry is worth writing without a title.
+    untitled = client.put(
+        f"/api/diary/entries/{day}", headers=auth, json={"body_md": "no title here"}
+    ).json()
+    assert untitled["title"] == ""
+
+    titled = client.put(
+        f"/api/diary/entries/{day}",
+        headers=auth,
+        json={"title": "  Тау  ", "body_md": "no title here"},
+    ).json()
+    assert titled["title"] == "Тау"  # trimmed
+
+    assert client.get(f"/api/diary/entries/{day}", headers=auth).json()["title"] == "Тау"
+    # And it reaches the list the past-entries view and dashboard card read.
+    listed = client.get("/api/diary/entries", headers=auth).json()
+    assert listed[0]["title"] == "Тау"
+
+
+def test_title_can_be_cleared(client, auth):
+    day = "2026-08-15"
+    client.put(f"/api/diary/entries/{day}", headers=auth, json={"title": "x", "body_md": "b"})
+    cleared = client.put(
+        f"/api/diary/entries/{day}", headers=auth, json={"title": "", "body_md": "b"}
+    ).json()
+    assert cleared["title"] == ""
