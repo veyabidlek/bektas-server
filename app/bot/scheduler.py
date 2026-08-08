@@ -1,4 +1,4 @@
-"""Reminder delivery and the morning digest.
+"""Reminder delivery, the morning digest and the evening review.
 
 The scheduling decision — "which of these should fire now?" — is a pure
 function so it can be tested without a clock, a database or Telegram.
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.calendar import CalendarEvent
 from app.models.task import Task
+from app.services import review as review_svc
 from app.services.calendar import ASTANA
 from app.services.settings import get_setting, set_setting
 
@@ -25,6 +26,10 @@ MAX_LATE = timedelta(hours=6)
 
 DIGEST_HOUR = 8
 DIGEST_SETTING = "bot_last_digest_day"
+
+# The evening review, like the digest, is once a day and remembers the day it
+# last went out — so a restart at 21:31 does not ask him everything twice.
+REVIEW_SETTING = "bot_last_review_day"
 
 
 @dataclass
@@ -83,6 +88,24 @@ def should_send_digest(now: datetime, last_sent_day: str | None) -> bool:
     if last_sent_day == today:
         return False
     return now.hour >= DIGEST_HOUR
+
+
+def should_send_review(
+    now: datetime, last_sent_day: str | None, review_time: str
+) -> bool:
+    """One evening review per day, at or after the configured Almaty time.
+
+    `review_time` is "HH:MM" as stored by the calendar page; nonsense in the
+    setting falls back to the default rather than silencing the review.
+    """
+    today = now.strftime("%Y-%m-%d")
+    if last_sent_day == today:
+        return False
+    try:
+        hour, minute = (int(part) for part in review_svc.normalize_time(review_time).split(":"))
+    except ValueError:
+        hour, minute = (int(part) for part in review_svc.DEFAULT_REVIEW_TIME.split(":"))
+    return (now.hour, now.minute) >= (hour, minute)
 
 
 # --- database-facing wrappers ---
@@ -145,12 +168,19 @@ def digest_message(db: Session, now: datetime) -> str:
 
     inbox = db.query(InboxItem).filter(InboxItem.triaged_to.is_(None)).count()
 
+    # Yesterday's effectiveness, if he reviewed it — the morning is when that
+    # number is worth reading. A day he never reviewed adds no line at all.
+    yesterday = review_svc.day_score(
+        db, (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    )
+
     return copy.digest(
         today_iso=today,
         events=timeline,
         tasks=[t.title for t in due_today[:8]],
         overdue=len(overdue),
         inbox=inbox,
+        yesterday=yesterday if yesterday.has_data else None,
     )
 
 
@@ -160,3 +190,11 @@ def record_digest_sent(db: Session, now: datetime) -> None:
 
 def last_digest_day(db: Session) -> str | None:
     return get_setting(db, DIGEST_SETTING)
+
+
+def record_review_sent(db: Session, now: datetime) -> None:
+    set_setting(db, REVIEW_SETTING, now.strftime("%Y-%m-%d"))
+
+
+def last_review_day(db: Session) -> str | None:
+    return get_setting(db, REVIEW_SETTING)

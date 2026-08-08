@@ -106,18 +106,25 @@ class TelegramClient:
             log.warning("send failed: %s", exc)
             return None
 
-    def edit_message(self, chat_id: int, message_id: int, text: str) -> None:
+    def edit_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        buttons: list[list[dict]] | None = None,
+    ) -> None:
+        """Rewrite a message in place. Without `buttons` its keyboard is dropped,
+        which is what a settled confirmation wants."""
+        payload: dict = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+        if buttons:
+            payload["reply_markup"] = {"inline_keyboard": buttons}
         try:
-            self._call(
-                "editMessageText",
-                {
-                    "chat_id": chat_id,
-                    "message_id": message_id,
-                    "text": text,
-                    "parse_mode": "HTML",
-                },
-                timeout=30,
-            )
+            self._call("editMessageText", payload, timeout=30)
         except TelegramError as exc:
             log.warning("edit failed: %s", exc)
 

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -10,8 +12,17 @@ from app.schemas.calendar import (
     CalendarEventUpdate,
     GoogleStatus,
 )
+from app.schemas.review import (
+    DayScoreOut,
+    EventOutcomeOut,
+    OutcomeIn,
+    ReviewSettings,
+    ReviewSummary,
+)
 from app.services import calendar as svc
 from app.services import gcal
+from app.services import review as review_svc
+from app.services.calendar import ASTANA
 
 # Every route here is admin-only: the calendar is Bektas's own, and unlike the
 # rest of the site there is no public tier to fall back to.
@@ -73,7 +84,83 @@ def delete_event(
         raise HTTPException(status_code=404, detail="Event not found")
     google_id = event.google_event_id
     svc.delete_event(db, event)
+    # A deleted event must not keep scoring days it is no longer part of.
+    review_svc.delete_outcome(db, event_id)
     gcal.remove_event(db, google_id)
+
+
+# --- Evening review ---
+#
+# Declared before the Google block only for reading order; the important
+# ordering is inside: /review/settings and /review/summary come before
+# /review/{day}, or "settings" would be read as a date.
+
+
+@router.get("/review/settings", response_model=ReviewSettings)
+def review_settings(db: Session = Depends(get_db), _: None = Depends(require_admin)):
+    return ReviewSettings(review_time=review_svc.get_review_time(db))
+
+
+@router.put("/review/settings", response_model=ReviewSettings)
+def update_review_settings(
+    data: ReviewSettings,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    try:
+        return ReviewSettings(review_time=review_svc.set_review_time(db, data.review_time))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/review/summary", response_model=ReviewSummary)
+def review_summary(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """Yesterday, today so far, and the strip — one request for the dashboard."""
+    span = max(1, min(days, 31))
+    today = datetime.now(ASTANA).strftime("%Y-%m-%d")
+    window = [
+        (datetime.fromisoformat(today) - timedelta(days=offset)).strftime("%Y-%m-%d")
+        for offset in range(span - 1, -1, -1)
+    ]
+    scores = [DayScoreOut(**vars(s)) for s in review_svc.day_scores(db, window)]
+    yesterday = (datetime.fromisoformat(today) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    return ReviewSummary(
+        today=DayScoreOut(**vars(review_svc.day_score(db, today))),
+        yesterday=DayScoreOut(**vars(review_svc.day_score(db, yesterday))),
+        days=scores,
+    )
+
+
+@router.get("/review/{day}", response_model=DayScoreOut)
+def review_day(day: str, db: Session = Depends(get_db), _: None = Depends(require_admin)):
+    return DayScoreOut(**vars(review_svc.day_score(db, day)))
+
+
+@router.put("/events/{event_id}/outcome", response_model=EventOutcomeOut)
+def set_outcome(
+    event_id: str,
+    data: OutcomeIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """Answer for one event. Re-answering overwrites — same as tapping again in chat."""
+    if not svc.get_event(db, event_id):
+        raise HTTPException(status_code=404, detail="Event not found")
+    try:
+        row = review_svc.record_outcome(db, event_id, data.outcome, data.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EventOutcomeOut(
+        event_id=row.event_id,
+        outcome=row.outcome,
+        note=row.note,
+        recorded_at=row.recorded_at,
+    )
 
 
 # --- Google Calendar ---

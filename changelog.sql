@@ -304,3 +304,25 @@ CREATE INDEX IF NOT EXISTS ix_inbox_images_item_id ON inbox_images (item_id);
 -- would send the same reminder twice; it is written only AFTER a successful
 -- send, so a failed send simply retries on the next tick.
 ALTER TABLE calendar_events ADD COLUMN reminder_fired_at VARCHAR;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 009 — Evening calendar review (event outcomes)
+-- Date: 2026-08-08
+--
+-- New table, created by create_all() at startup — nothing existing is altered,
+-- so his live events, tasks and diary are untouched.
+-- -----------------------------------------------------------------------------
+
+-- How a planned event actually went. The event id IS the primary key: one
+-- answer per event, and answering again overwrites rather than piling up a
+-- history — "did I get up at 07:00?" has one true answer per day.
+--
+-- An event with NO row here was never reviewed; that third state is deliberately
+-- absent from `outcome` so an unanswered day scores as unknown, not as zero.
+CREATE TABLE IF NOT EXISTS event_outcomes (
+    event_id    VARCHAR PRIMARY KEY,
+    outcome     VARCHAR NOT NULL,          -- 'done' | 'partial' | 'no'
+    note        TEXT,
+    recorded_at VARCHAR NOT NULL
+);

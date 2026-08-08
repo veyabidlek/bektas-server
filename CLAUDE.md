@@ -66,6 +66,15 @@ Follow this exact pattern (habits is the reference implementation):
   features by extending those, not by writing a parallel path.
 - Reminder delivery is idempotent via `calendar_events.reminder_fired_at`, written
   only after a successful send.
+- The **evening review** (`app/bot/review.py`) asks about each of today's events at
+  the time stored in the `bot_review_time` setting (default 21:30, editable on the
+  calendar page) and is once-a-day via `bot_last_review_day`, the same flag shape as
+  the digest. `/review` runs it on demand. A day with no events sends **nothing**.
+- Review answers live in `event_outcomes` (one row per event, re-answer overwrites);
+  the score math is the pure `app/services/review_score.py` — `done=1, partial=½,
+  no=0` over *reviewed* events. Unanswered events never score as failures.
+- The note flow is **stateless**: the prompt message carries `#ev-<event>-<card>`, and
+  a reply quoting it is matched by parsing that tag. Do not add conversation state.
 - Bot copy lives in `app/bot/copy.py` and is **English** — Bektas's personal tools
   are English; the customer-facing products stay Kazakh.
 

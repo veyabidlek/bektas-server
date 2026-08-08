@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.bot import copy
+from app.bot import copy, review
 from app.bot.client import TelegramClient, button
 from app.services import inbox as inbox_svc
 from app.services import inbox_triage as triage
@@ -65,7 +65,11 @@ def handle_message(db: Session, tg: TelegramClient, message: dict, chat_id: int)
     photos = message.get("photo") or []
 
     if text.startswith("/"):
-        _handle_command(tg, chat_id, text)
+        _handle_command(db, tg, chat_id, text)
+        return
+
+    # A reply quoting a review's note prompt is a note, not a new thought.
+    if message.get("reply_to_message") and review.save_note(db, tg, chat_id, message):
         return
 
     origin = _forward_origin(message)
@@ -103,10 +107,15 @@ def handle_message(db: Session, tg: TelegramClient, message: dict, chat_id: int)
     )
 
 
-def _handle_command(tg: TelegramClient, chat_id: int, text: str) -> None:
+def _handle_command(db: Session, tg: TelegramClient, chat_id: int, text: str) -> None:
     command = text.split()[0].split("@")[0].lower()
     if command in ("/start", "/help"):
         tg.send_message(chat_id, copy.START)
+    elif command == "/review":
+        # On demand, whatever the clock says — and silent on an empty day, the
+        # same rule the scheduled one follows.
+        if not review.send_review(db, tg, chat_id):
+            tg.send_message(chat_id, copy.REVIEW_NOTHING)
     else:
         tg.send_message(chat_id, copy.UNKNOWN_COMMAND)
 
@@ -147,6 +156,9 @@ def handle_callback(db: Session, tg: TelegramClient, query: dict, chat_id: int) 
     # k:<kind>:<item>  → ask the one extra question first
     # d:<kind>:<item>:<when> → the answer to that question
     # rc / rx          → confirm or undo a parsed reminder
+    # ro:<outcome>:<event>   → an evening-review answer
+    # rn:<event>:<card>      → add a note to that answer
+    # rv:<day>               → finish the review, send the score
     parts = data.split(":")
     action = parts[0]
 
@@ -168,11 +180,32 @@ def handle_callback(db: Session, tg: TelegramClient, query: dict, chat_id: int) 
         elif action == "rx" and len(parts) == 2:
             _undo_reminder(db, tg, chat_id, message_id, callback_id, parts[1])
 
+        elif action == "ro" and len(parts) == 3:
+            review.record(db, tg, chat_id, message_id, callback_id, parts[2], parts[1])
+
+        elif action == "rn" and len(parts) in (2, 3):
+            _ask_review_note(db, tg, chat_id, callback_id, parts)
+
+        elif action == "rv" and len(parts) == 2:
+            tg.answer_callback(callback_id)
+            review.send_score(db, tg, chat_id, parts[1])
+
         else:
             tg.answer_callback(callback_id)
     except Exception:  # noqa: BLE001 — one bad press must not stop the bot
         log.exception("callback %s failed", data)
         tg.answer_callback(callback_id, copy.FAILED)
+
+
+def _ask_review_note(db, tg, chat_id, callback_id, parts: list[str]) -> None:
+    from app.services import calendar as calendar_svc
+
+    event = calendar_svc.get_event(db, parts[1])
+    if not event:
+        tg.answer_callback(callback_id, copy.FAILED)
+        return
+    card_message_id = int(parts[2]) if len(parts) == 3 and parts[2].isdigit() else None
+    review.ask_note(tg, chat_id, callback_id, event.title, event.id, card_message_id)
 
 
 def _ask_when(tg, chat_id, message_id, callback_id, kind: str, item_id: str) -> None:

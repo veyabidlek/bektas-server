@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from conftest import FakeTelegram
+
 from app.bot import handlers, scheduler
 from app.services import inbox as inbox_svc
 
@@ -26,29 +28,6 @@ class FakeEvent:
     starts_at: str
     reminder_minutes: int | None = 0
     reminder_fired_at: str | None = None
-
-
-class FakeTelegram:
-    """Records what the bot would have sent."""
-
-    def __init__(self):
-        self.sent: list[dict] = []
-        self.edits: list[str] = []
-        self.answers: list[str] = []
-        self.files: dict[str, bytes] = {}
-
-    def send_message(self, chat_id, text, buttons=None, reply_to=None):
-        self.sent.append({"chat_id": chat_id, "text": text, "buttons": buttons})
-        return {"message_id": len(self.sent)}
-
-    def edit_message(self, chat_id, message_id, text):
-        self.edits.append(text)
-
-    def answer_callback(self, callback_id, text=""):
-        self.answers.append(text)
-
-    def download_file(self, file_id):
-        return self.files.get(file_id)
 
 
 def _png() -> bytes:

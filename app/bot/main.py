@@ -12,10 +12,11 @@ import os
 import time
 from datetime import datetime
 
-from app.bot import copy, scheduler
+from app.bot import copy, review, scheduler
 from app.bot.client import TelegramClient, TelegramError
 from app.bot.handlers import handle_callback, handle_message
 from app.database import SessionLocal
+from app.services import review as review_svc
 from app.services.calendar import ASTANA
 
 logging.basicConfig(
@@ -118,7 +119,7 @@ def _dispatch(tg: TelegramClient, owner: int, update: dict) -> None:
 
 
 def _tick(tg: TelegramClient, owner: int) -> None:
-    """Fire due reminders, and the morning digest once a day."""
+    """Fire due reminders, the morning digest and the evening review."""
     now = datetime.now(ASTANA)
     db = SessionLocal()
     try:
@@ -130,5 +131,13 @@ def _tick(tg: TelegramClient, owner: int) -> None:
         if _digest_enabled() and scheduler.should_send_digest(now, scheduler.last_digest_day(db)):
             tg.send_message(owner, scheduler.digest_message(db, now))
             scheduler.record_digest_sent(db, now)
+
+        if scheduler.should_send_review(
+            now, scheduler.last_review_day(db), review_svc.get_review_time(db)
+        ):
+            # A day with nothing on the calendar sends nothing — but it still
+            # counts as "asked", so the empty day is not retried every minute.
+            review.send_review(db, tg, owner, now.strftime("%Y-%m-%d"))
+            scheduler.record_review_sent(db, now)
     finally:
         db.close()

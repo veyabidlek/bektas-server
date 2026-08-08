@@ -61,6 +61,11 @@ FastAPI backend for the personal website. PostgreSQL database, JWT admin auth.
 | GET | `/api/calendar/google/callback` | — | Where Google redirects back (state-checked) |
 | POST | `/api/calendar/google/disconnect` | admin | Forget the refresh token |
 | POST | `/api/calendar/google/resync` | admin | Re-push every event to Google |
+| GET | `/api/calendar/review/settings` | admin | When the evening review goes out ("HH:MM") |
+| PUT | `/api/calendar/review/settings` | admin | Move the review time |
+| GET | `/api/calendar/review/summary` | admin | Yesterday, today so far, and the last `days` (default 7) |
+| GET | `/api/calendar/review/{day}` | admin | One day's effectiveness |
+| PUT | `/api/calendar/events/{id}/outcome` | admin | Record `done` / `partial` / `no` (+ note) |
 
 Times are ISO 8601 with an explicit **Asia/Almaty** offset. A datetime sent
 without an offset is read as Almaty local, not UTC.

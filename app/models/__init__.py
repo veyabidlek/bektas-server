@@ -8,6 +8,7 @@ from app.models.portfolio import PortfolioProject
 from app.models.friend import Friend
 from app.models.admin_key import AdminKey
 from app.models.calendar import CalendarEvent
+from app.models.event_outcome import EventOutcome
 from app.models.setting import Setting
 from app.models.diary import DiaryEntry, DiaryImage
 from app.models.task import Task
@@ -23,6 +24,7 @@ __all__ = [
     "Friend",
     "AdminKey",
     "CalendarEvent",
+    "EventOutcome",
     "Setting",
     "DiaryEntry", "DiaryImage",
     "Task",

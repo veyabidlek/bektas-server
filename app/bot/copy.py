@@ -29,7 +29,11 @@ START = (
     "→ straight onto your Calendar.\n"
     "\n"
     "<b>Every morning</b>\n"
-    "08:00 — today's events, tasks and inbox."
+    "08:00 — today's events, tasks and inbox.\n"
+    "\n"
+    "<b>Every evening</b>\n"
+    "The review: each of today's events, one tap each, then your score.\n"
+    "<code>/review</code> runs it now."
 )
 
 REFUSED = "Sorry — this is a private bot."
@@ -143,12 +147,81 @@ def reminder_fire(title: str, starts_at: str) -> str:
     return f"⏰ <b>{title}</b>\n{time or label}"
 
 
+# --- the evening review ---------------------------------------------------
+
+BTN_DONE = "✅ Done"
+BTN_PARTIAL = "🟡 Partly"
+BTN_NO = "❌ No"
+BTN_NOTE = "📝 Note"
+BTN_FINISH = "Finish"
+
+OUTCOME_LINE = {"done": "✅ Done", "partial": "🟡 Partly", "no": "❌ No"}
+
+REVIEW_NOTHING = "Nothing was on the calendar today."
+REVIEW_UNANSWERED = "Nothing answered yet — tap one of the buttons above."
+NOTE_SAVED = "📝 Noted."
+NOTE_ORPHANED = "Answer that one first, then add the note."
+RECORDED = "Recorded."
+
+
+def review_header(today_iso: str) -> str:
+    """Opens the review — the same Today header the digest uses."""
+    label, _ = _date_parts(today_iso)
+    return f"🌙 <b>Evening review</b>\n{label}\nHow did today go?"
+
+
+def review_card(title: str, starts_at: str, all_day: bool = False) -> str:
+    """One event, compact: "07:00 · <b>Wake up</b>"."""
+    time = None if all_day else (starts_at[11:16] if len(starts_at) >= 16 else None)
+    return f"{time or '—'} · <b>{title}</b>"
+
+
+def review_settled(
+    title: str, starts_at: str, outcome: str, note: str | None = None, all_day: bool = False
+) -> str:
+    """The card after he has answered — the settled state the message becomes."""
+    lines = [review_card(title, starts_at, all_day), OUTCOME_LINE.get(outcome, outcome)]
+    if note:
+        lines.append(f"📝 {note}")
+    return "\n".join(lines)
+
+
+def note_prompt(title: str, event_id: str, card_message_id: int | None = None) -> str:
+    """Asks for the note, and carries the target in the message itself.
+
+    The tag is what makes the note flow stateless: his reply quotes this
+    message, so the handler reads the event (and the card to update) straight
+    off the quoted text instead of remembering a conversation.
+    """
+    tag = f"#ev-{event_id}" + (f"-{card_message_id}" if card_message_id else "")
+    return f"📝 <b>{title}</b>\nReply to this message with your note.\n<code>{tag}</code>"
+
+
+def breakdown(done: int, partial: int, reviewed: int) -> str:
+    """"4/6 done, 1 partly" — the counts behind the percentage."""
+    parts = [f"{done}/{reviewed} done"]
+    if partial:
+        parts.append(f"{partial} partly")
+    return ", ".join(parts)
+
+
+def score_line(done: int, partial: int, reviewed: int, percent: int) -> str:
+    """"4/6 done, 1 partly — 75%", the whole thing on one line."""
+    return f"{breakdown(done, partial, reviewed)} — {percent}%"
+
+
+def day_score(done: int, partial: int, reviewed: int, percent: int) -> str:
+    """The closing card of a review: the number, then what it is made of."""
+    return f"📊 <b>Effectiveness — {percent}%</b>\n{breakdown(done, partial, reviewed)}"
+
+
 def digest(
     today_iso: str,
     events: list[tuple[str | None, str]],
     tasks: list[str],
     overdue: int,
     inbox: int,
+    yesterday=None,
 ) -> str:
     """The 08:00 message, laid out like the site's morning screen.
 
@@ -174,5 +247,15 @@ def digest(
 
     if not events and not tasks and not overdue and not inbox:
         lines += ["", "Nothing scheduled. A good day to write."]
+
+    # How yesterday actually went — one line, and only when he reviewed it.
+    if yesterday is not None and yesterday.percent is not None:
+        lines += [
+            "",
+            "📊 <b>Yesterday</b> · "
+            + score_line(
+                yesterday.done, yesterday.partial, yesterday.reviewed, yesterday.percent
+            ),
+        ]
 
     return "\n".join(lines)

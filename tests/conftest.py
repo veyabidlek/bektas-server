@@ -26,6 +26,36 @@ from app.main import app as fastapi_app  # noqa: E402
 from app.services import admin_key  # noqa: E402
 
 
+class FakeTelegram:
+    """Records what the bot would have sent.
+
+    Shared by the bot suites: the handlers are exercised for real, only the
+    network is replaced. `send_message` hands back an ascending message_id so a
+    flow that later edits its own message has something to edit.
+    """
+
+    def __init__(self):
+        self.sent: list[dict] = []
+        self.edits: list[str] = []
+        self.edited: list[dict] = []
+        self.answers: list[str] = []
+        self.files: dict[str, bytes] = {}
+
+    def send_message(self, chat_id, text, buttons=None, reply_to=None):
+        self.sent.append({"chat_id": chat_id, "text": text, "buttons": buttons})
+        return {"message_id": len(self.sent)}
+
+    def edit_message(self, chat_id, message_id, text, buttons=None):
+        self.edits.append(text)
+        self.edited.append({"message_id": message_id, "text": text, "buttons": buttons})
+
+    def answer_callback(self, callback_id, text=""):
+        self.answers.append(text)
+
+    def download_file(self, file_id):
+        return self.files.get(file_id)
+
+
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     """The per-IP limiter is module-level and in-memory.
