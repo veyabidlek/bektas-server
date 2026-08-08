@@ -290,3 +290,17 @@ CREATE TABLE IF NOT EXISTS inbox_images (
     created_at   VARCHAR NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_inbox_images_item_id ON inbox_images (item_id);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 008 — Telegram bot reminder idempotency (phase 3)
+-- Date: 2026-08-08
+--
+-- Applied by ensure_columns() at startup: calendar_events already had rows in
+-- production, so create_all() would not have touched it.
+-- -----------------------------------------------------------------------------
+
+-- Set once the bot has pinged about an event. Without it a restart mid-minute
+-- would send the same reminder twice; it is written only AFTER a successful
+-- send, so a failed send simply retries on the next tick.
+ALTER TABLE calendar_events ADD COLUMN reminder_fired_at VARCHAR;

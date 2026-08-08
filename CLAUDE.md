@@ -55,6 +55,20 @@ Follow this exact pattern (habits is the reference implementation):
 - `scripts/backup.sh` captures the database *and* `/data/uploads`. Anything new
   stored on the volume has to be added there too.
 
+## Telegram bot
+
+- Runs as the **`bot` compose service** — same image, `python -m app.bot`, long
+  polling, no port. A bot crash must never take the website down.
+- **Owner-locked** via `PERSONAL_BOT_OWNER_ID`; everyone else gets one refusal line.
+- Without `PERSONAL_BOT_TOKEN` it logs why and **idles** (never exits — that would
+  crash-loop under `restart: unless-stopped`).
+- All capture goes through `app/services/inbox.py` + `inbox_triage.py`. Add bot
+  features by extending those, not by writing a parallel path.
+- Reminder delivery is idempotent via `calendar_events.reminder_fired_at`, written
+  only after a successful send.
+- Bot copy lives in `app/bot/copy.py` and is **English** — Bektas's personal tools
+  are English; the customer-facing products stay Kazakh.
+
 ## File size limits
 
 Keep service files under 150 lines. If a service grows beyond that, split by domain.
