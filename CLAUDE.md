@@ -75,6 +75,21 @@ Follow this exact pattern (habits is the reference implementation):
   no=0` over *reviewed* events. Unanswered events never score as failures.
 - The note flow is **stateless**: the prompt message carries `#ev-<event>-<card>`, and
   a reply quoting it is matched by parsing that tag. Do not add conversation state.
+- The **weekly digest** (`app/bot/weekly.py`) goes out **Sunday** at `bot_weekly_digest_time`
+  (default 20:00, editable on the calendar page beside the review time), once per Sunday
+  via `bot_last_weekly_day`, and is switched off with `PERSONAL_BOT_WEEKLY_DIGEST=false`.
+  `/digest` runs it on demand. Unlike the review it **always sends** — a week with
+  nothing recorded still gets its one line.
+- The week is **Monday-based, Almaty, Sunday inclusive** (`app/services/week_stats.py`,
+  pure) and the counting is `app/services/weekly.py`. A Sunday belongs to the week that
+  is *ending*. Add a number to the digest by adding it there, not in the copy layer.
+- The digest's paragraph is DeepSeek via `app/services/llm.py` + `weekly_summary.py`.
+  It is **optional by construction**: no `DEEPSEEK_API_KEY`, a timeout, a 500 or an
+  empty completion all return `None` and the section is simply absent. Nothing about
+  the digest may ever depend on the model answering. Model names: `deepseek-chat` is
+  retired, use `deepseek-v4-flash` (the `DEEPSEEK_MODEL` default).
+- Model output is **escaped** (`weekly_summary.tidy`) before it goes near Telegram —
+  messages are sent with `parse_mode=HTML` and one stray `<` breaks the whole send.
 - Bot copy lives in `app/bot/copy.py` and is **English** — Bektas's personal tools
   are English; the customer-facing products stay Kazakh.
 
