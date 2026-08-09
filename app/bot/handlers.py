@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.bot import copy, review, scheduler, weekly
+from app.bot import copy, diary, review, scheduler, weekly
 from app.bot.client import TelegramClient, button
 from app.services import inbox as inbox_svc
 from app.services import inbox_triage as triage
@@ -75,9 +75,13 @@ def handle_message(db: Session, tg: TelegramClient, message: dict, chat_id: int)
         _handle_menu(db, tg, chat_id, text)
         return
 
-    # A reply quoting a review's note prompt is a note, not a new thought.
-    if message.get("reply_to_message") and review.save_note(db, tg, chat_id, message):
-        return
+    # A reply quoting one of the bot's prompts is matched by its tag — BEFORE any
+    # capture — so a diary write or a review note never lands in the Inbox.
+    if message.get("reply_to_message"):
+        if diary.save_reply(db, tg, chat_id, message):
+            return
+        if review.save_note(db, tg, chat_id, message):
+            return
 
     origin = _forward_origin(message)
     if origin:
@@ -147,6 +151,8 @@ def _handle_menu(db: Session, tg: TelegramClient, chat_id: int, label: str) -> N
     elif label == copy.BTN_MENU_INBOX:
         items = inbox_svc.list_items(db, triaged=False)
         tg.send_message(chat_id, copy.inbox_list(items), keyboard=copy.MENU_KEYBOARD)
+    elif label == copy.BTN_MENU_DIARY:
+        diary.show_today(db, tg, chat_id)
 
 
 def _create_reminder(db, tg, chat_id, reminder, original: str) -> None:

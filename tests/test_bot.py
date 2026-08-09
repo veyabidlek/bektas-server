@@ -217,7 +217,7 @@ def test_reply_keyboard_markup_is_persistent_and_resized():
     assert markup["is_persistent"] is True
     assert markup["resize_keyboard"] is True
     labels = [b["text"] for row in markup["keyboard"] for b in row]
-    assert labels == ["🌙 Review", "🗓 Week", "📅 Today", "📥 Inbox"]
+    assert labels == ["🌙 Review", "🗓 Week", "📅 Today", "📥 Inbox", "📔 Diary"]
 
 
 def test_the_inbox_button_shows_untriaged_and_does_not_capture(db):
@@ -280,6 +280,127 @@ def test_other_text_still_captures_normally(db):
 
     assert [i.text for i in inbox_svc.list_items(db)] == ["Review the lease"]
     assert tg.sent[-1]["text"] == f"{copy.CAPTURED}\n{copy.TRIAGE_PROMPT}"
+
+
+# --- the diary (write from chat, read it back article-style) ---------------
+
+
+def _diary_reply(text="", **extra):
+    """A message replying to the diary prompt for today."""
+    from app.bot import copy
+    from app.services import diary as diary_svc
+
+    prompt = copy.diary_prompt(diary_svc.today())
+    return _message(text, reply_to_message={"text": prompt}, **extra)
+
+
+def test_the_diary_button_shows_empty_and_prompts_without_capturing(db):
+    from app.bot import copy
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message(copy.BTN_MENU_DIARY), OWNER)
+
+    assert inbox_svc.list_items(db) == []                      # not captured
+    assert "empty — start writing" in tg.sent[0]["text"]
+    assert tg.sent[-1]["text"].startswith("✍️ <b>Write today's diary</b>")
+    assert "#diary-" in tg.sent[-1]["text"]
+
+
+def test_a_reply_to_the_diary_prompt_appends_text_not_an_inbox_item(db):
+    from app.bot import copy
+    from app.services import diary as diary_svc
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _diary_reply("Woke up early, ran the lake loop."), OWNER)
+
+    assert inbox_svc.list_items(db) == []                      # never captured
+    entry = diary_svc.get_entry(db, diary_svc.today())
+    assert entry.exists
+    assert entry.body_md == "Woke up early, ran the lake loop."
+    assert tg.sent[-1]["text"] == copy.DIARY_SAVED
+
+
+def test_a_second_diary_reply_appends_with_the_same_separator_as_triage(db):
+    from app.services import diary as diary_svc
+    from app.services.inbox import DIARY_SEPARATOR
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _diary_reply("First thought."), OWNER)
+    handlers.handle_message(db, tg, _diary_reply("Second thought."), OWNER)
+
+    entry = diary_svc.get_entry(db, diary_svc.today())
+    assert entry.body_md == f"First thought.{DIARY_SEPARATOR}Second thought."
+
+
+def test_diary_direct_write_and_inbox_triage_share_one_entry(db):
+    """Both flows append to today's single entry — no double store, no clash."""
+    from app.services import diary as diary_svc
+    from app.services.inbox import DIARY_SEPARATOR
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _diary_reply("Typed straight in."), OWNER)
+
+    # …now a captured thought filed to Diary via the inbox triage path.
+    item = inbox_svc.create_item(db, "Filed from the inbox.")
+    inbox_svc.triage_item(db, item, "diary")
+
+    entry = diary_svc.get_entry(db, diary_svc.today())
+    assert entry.body_md == (
+        f"Typed straight in.{DIARY_SEPARATOR}Filed from the inbox."
+    )
+
+
+def test_a_photo_reply_attaches_to_todays_diary(db, tmp_path, monkeypatch):
+    from app.services import diary as diary_svc
+
+    monkeypatch.setattr(diary_svc, "UPLOAD_DIR", tmp_path / "diary")
+    tg = FakeTelegram()
+    tg.files["big"] = _png()
+
+    handlers.handle_message(
+        db, tg, _diary_reply("", photo=[{"file_id": "small"}, {"file_id": "big"}]), OWNER
+    )
+
+    assert inbox_svc.list_items(db) == []                      # not captured
+    entry = diary_svc.get_entry(db, diary_svc.today())
+    assert len(entry.images) == 1
+    assert tg.sent[-1]["text"] == "📔 Photo added to today's diary"
+
+
+def test_the_diary_button_renders_the_entry_article_style(db, tmp_path, monkeypatch):
+    from app.bot import copy
+    from app.services import diary as diary_svc
+
+    monkeypatch.setattr(diary_svc, "UPLOAD_DIR", tmp_path / "diary")
+    diary_svc.upsert_entry(
+        db, diary_svc.today(), "# Morning\n\nRan **hard** today.", title="My day"
+    )
+    diary_svc.add_image(db, diary_svc.today(), _png(), "image/png")
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message(copy.BTN_MENU_DIARY), OWNER)
+
+    article = tg.sent[0]["text"]
+    assert "📔 <b>My day</b>" in article        # title as a heading
+    assert "<b>Morning</b>" in article          # markdown heading → bold
+    assert "Ran <b>hard</b> today." in article  # inline bold
+    assert "1 photo" in article                 # the photo cue
+    # The photo itself is sent as a real image, after the text.
+    assert len(tg.photos) == 1
+
+
+def test_render_markdown_maps_the_site_subset_to_telegram_html():
+    from app.bot import copy
+
+    assert copy.render_markdown("## Heading") == "<b>Heading</b>"
+    assert copy.render_markdown("- one\n- two") == "• one\n• two"
+    assert copy.render_markdown("**b** and *i* and ~~s~~") == "<b>b</b> and <i>i</i> and <s>s</s>"
+    assert copy.render_markdown("`x < y`") == "<code>x &lt; y</code>"
+    assert copy.render_markdown("[site](https://a.b)") == '<a href="https://a.b">site</a>'
+    assert copy.render_markdown("---") == "┄┄┄┄┄┄┄┄"
+    assert copy.render_markdown("![alt](u.jpg)").strip() == ""   # images dropped from text
+    # A stray tag in the body can never break the send.
+    assert "<script>" not in copy.render_markdown("watch <script>alert(1)</script>")
 
 
 # --- triage from a button -------------------------------------------------

@@ -12,6 +12,7 @@ Telegram HTML, emoji used sparingly as section accents (📅 ✅ 📥 📔 ⏰).
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime, timedelta
 
 # --- onboarding -----------------------------------------------------------
@@ -78,14 +79,18 @@ BTN_MENU_REVIEW = "🌙 Review"   # → the evening review, now (same as /review
 BTN_MENU_WEEK = "🗓 Week"       # → the weekly digest, now (same as /digest)
 BTN_MENU_TODAY = "📅 Today"     # → today's agenda (the morning-digest view)
 BTN_MENU_INBOX = "📥 Inbox"     # → what is still waiting in the Inbox
+BTN_MENU_DIARY = "📔 Diary"     # → read today's entry, and write into it
 
 MENU_KEYBOARD = [
     [BTN_MENU_REVIEW, BTN_MENU_WEEK],
     [BTN_MENU_TODAY, BTN_MENU_INBOX],
+    [BTN_MENU_DIARY],
 ]
 
 # The set the message handler checks against — a tap is one of exactly these.
-MENU_LABELS = {BTN_MENU_REVIEW, BTN_MENU_WEEK, BTN_MENU_TODAY, BTN_MENU_INBOX}
+MENU_LABELS = {
+    BTN_MENU_REVIEW, BTN_MENU_WEEK, BTN_MENU_TODAY, BTN_MENU_INBOX, BTN_MENU_DIARY,
+}
 
 
 def inbox_list(items) -> str:
@@ -212,6 +217,126 @@ def note_confirmation(title: str) -> str:
 def diary_confirmation(day: str) -> str:
     label, _ = _date_parts(day)
     return f"📔 Added to your Diary\n{label}"
+
+
+# --- the diary (write from chat, read it back article-style) ---------------
+
+# Settled cards a diary reply ends in.
+DIARY_SAVED = "📔 Added to today's diary"
+DIARY_PHOTO_SAVED = "📔 Photo added to today's diary"
+DIARY_SAVED_BOTH = "📔 Added to today's diary — words and a photo"
+DIARY_EMPTY_REPLY = "Reply with a few words or a photo to add to today's diary."
+
+# Markdown → the HTML subset Telegram actually renders: <b> <i> <s> <u> <code>
+# <a> <blockquote>. Everything Telegram can't do degrades — headings and bold
+# both become <b>, lists become "• ", a rule becomes a thin divider, and images
+# are dropped from the text because the photos are sent as real images after it.
+_MD_IMG = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_MD_RULE = re.compile(r"^\s*([-*_])\1{2,}\s*$")
+_MD_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+_MD_LIST = re.compile(r"^(\s*)[-*+]\s+(.*)$")
+_MD_OLIST = re.compile(r"^(\s*)(\d+)\.\s+(.*)$")
+_MD_QUOTE = re.compile(r"^>\s?(.*)$")
+_MD_CODE = re.compile(r"`([^`]+)`")
+_MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_MD_BOLD = re.compile(r"(\*\*|__)(.+?)\1")
+_MD_STRIKE = re.compile(r"~~(.+?)~~")
+_MD_ITALIC = re.compile(r"(?<![\*_\w])([*_])(?!\s)(.+?)(?<!\s)\1(?![\*_\w])")
+
+
+def _md_inline(text: str) -> str:
+    """Inline spans on an already-HTML-escaped line. Code first so its contents
+    are not re-processed as emphasis."""
+    text = _MD_CODE.sub(lambda m: f"<code>{m.group(1)}</code>", text)
+    text = _MD_LINK.sub(
+        lambda m: f'<a href="{m.group(2).replace(chr(34), "%22")}">{m.group(1)}</a>', text
+    )
+    text = _MD_BOLD.sub(lambda m: f"<b>{m.group(2)}</b>", text)
+    text = _MD_STRIKE.sub(lambda m: f"<s>{m.group(1)}</s>", text)
+    text = _MD_ITALIC.sub(lambda m: f"<i>{m.group(2)}</i>", text)
+    return text
+
+
+def render_markdown(md: str) -> str:
+    """The site's markdown, rendered to Telegram-safe HTML. Read the mapping in
+    the module comment above `_MD_IMG`."""
+    out: list[str] = []
+    for raw in (md or "").split("\n"):
+        line = _MD_IMG.sub("", raw)
+        if _MD_RULE.match(line):
+            out.append("┄┄┄┄┄┄┄┄")
+            continue
+
+        heading = _MD_HEADING.match(line.strip())
+        bullet = None if heading else _MD_LIST.match(line)
+        ordered = None if (heading or bullet) else _MD_OLIST.match(line)
+        quote = None if (heading or bullet or ordered) else _MD_QUOTE.match(line)
+
+        if heading:
+            content = heading.group(2)
+        elif bullet:
+            content = bullet.group(2)
+        elif ordered:
+            content = ordered.group(3)
+        elif quote:
+            content = quote.group(1)
+        else:
+            content = line
+
+        rendered = _md_inline(html.escape(content, quote=False))
+
+        if heading:
+            rendered = f"<b>{rendered}</b>"
+        elif bullet:
+            rendered = f"• {rendered}"
+        elif ordered:
+            rendered = f"{ordered.group(2)}. {rendered}"
+        elif quote:
+            rendered = f"<blockquote>{rendered}</blockquote>"
+        out.append(rendered)
+
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _hhmm(iso: str | None) -> str | None:
+    return iso[11:16] if iso and len(iso) >= 16 else None
+
+
+def diary_article(entry) -> str:
+    """Today's entry, read like the article it is on the site: a bold title, a
+    date line, the body rendered, then a quiet "written HH:MM · N photos" cue."""
+    label, _ = _date_parts(entry.day)
+    body = render_markdown(entry.body_md)
+
+    if not getattr(entry, "exists", False) or not (body or entry.images):
+        return f"📔 <b>Diary</b> · {label}\nToday's diary is empty — start writing."
+
+    title = (entry.title or "").strip()
+    head = f"📔 <b>{html.escape(title, quote=False)}</b>" if title else "📔 <b>Diary</b>"
+    lines = [head, label]
+    if body:
+        lines += ["", body]
+
+    cue = []
+    written = _hhmm(entry.updated_at)
+    if written:
+        cue.append(f"written {written}")
+    if entry.images:
+        n = len(entry.images)
+        cue.append(f"{n} photo" + ("s" if n != 1 else ""))
+    if cue:
+        lines += ["", f"<i>{' · '.join(cue)}</i>"]
+    return "\n".join(lines)
+
+
+def diary_prompt(day: str) -> str:
+    """The reply target. Carries the day in its own text so the flow stays
+    stateless — a reply quoting this tells the handler which day to write."""
+    return (
+        "✍️ <b>Write today's diary</b>\n"
+        "Reply to this message — text is appended, a photo is attached.\n"
+        f"<code>#diary-{day}</code>"
+    )
 
 
 def reminder_fire(title: str, starts_at: str) -> str:

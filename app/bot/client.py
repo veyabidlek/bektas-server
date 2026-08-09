@@ -12,6 +12,7 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 log = logging.getLogger("bot.client")
 
@@ -128,6 +129,27 @@ class TelegramClient:
             log.warning("send failed: %s", exc)
             return None
 
+    def send_photo(
+        self, chat_id: int, data: bytes, filename: str = "photo.jpg", caption: str | None = None
+    ) -> None:
+        """Upload real image bytes (private diary photos are auth-served, so a URL
+        Telegram could fetch does not exist — the file has to be sent inline).
+        Best-effort: a failed photo must never kill the poll loop."""
+        fields = {"chat_id": str(chat_id)}
+        if caption:
+            fields["caption"] = caption
+            fields["parse_mode"] = "HTML"
+        body, content_type = _multipart(fields, "photo", filename, data)
+
+        url = f"{API_ROOT}/bot{self._token}/sendPhoto"
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", content_type)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.HTTPError, OSError) as exc:
+            log.warning("send photo failed: %s", exc)
+
     def edit_message(
         self,
         chat_id: int,
@@ -159,6 +181,31 @@ class TelegramClient:
             )
         except TelegramError as exc:
             log.warning("callback ack failed: %s", exc)
+
+
+def _multipart(fields: dict[str, str], file_field: str, filename: str, data: bytes) -> tuple[bytes, str]:
+    """A minimal multipart/form-data body — one file plus text fields. Enough for
+    sendPhoto without pulling in a dependency the rest of this bot avoids."""
+    boundary = uuid.uuid4().hex
+    crlf = b"\r\n"
+    parts: list[bytes] = []
+    for name, value in fields.items():
+        parts += [
+            f"--{boundary}".encode(),
+            f'Content-Disposition: form-data; name="{name}"'.encode(),
+            b"",
+            value.encode("utf-8"),
+        ]
+    parts += [
+        f"--{boundary}".encode(),
+        f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"'.encode(),
+        b"Content-Type: application/octet-stream",
+        b"",
+        data,
+        f"--{boundary}--".encode(),
+        b"",
+    ]
+    return crlf.join(parts), f"multipart/form-data; boundary={boundary}"
 
 
 def button(text: str, data: str) -> dict:
