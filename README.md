@@ -86,6 +86,27 @@ Entry bodies are markdown (`body_md`), the same format articles use. Photos are
 downscaled to 1600 px / q85 on upload and stored on the Docker volume at
 `/data/uploads/diary` — never in the database and never on a public path.
 
+### Search (admin only)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/search?q=&limit=` | admin | One box over writings, diary, tasks, events and inbox |
+| POST | `/api/search/reindex` | admin | Rebuild the index from the source tables |
+
+Results come back grouped — `articles` / `diary` / `tasks` / `events` / `inbox`,
+every key present even when empty — and ranked by bm25 **within** each group,
+with the title weighted above the body. A hit is `{kind, ref, title, snippet,
+date}`; `kind` + `ref` is the deep link and the client owns the routing table.
+
+Snippets wrap each match in `` … `` rather than in `<mark>`: the
+client splits on those and renders real elements, so a diary entry containing
+`<script>` gets highlighted, never executed.
+
+Queries under **2 characters** search for nothing. Everything longer is stripped
+to letters and digits, each token wrapped in double quotes, and the last token
+given a `*` so results appear mid-word — `ron` already finds `ronaldo`. That
+wrapping is the security boundary: no input can close its own quote, so `AND`,
+`NEAR/3`, `col:`, `^` and a lone `"` all arrive as ordinary words.
+
 ### Admin
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|

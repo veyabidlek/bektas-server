@@ -78,6 +78,24 @@ Follow this exact pattern (habits is the reference implementation):
 - Bot copy lives in `app/bot/copy.py` and is **English** — Bektas's personal tools
   are English; the customer-facing products stay Kazakh.
 
+## Universal search
+
+- **One** FTS5 table (`search_index`), not one per model — `app/services/search_index.py`.
+  `SOURCES` there is the whole specification: adding a sixth searchable thing is
+  one entry, not a new table.
+- Sync is by **SQLite trigger**, never by application code. Do not "also update
+  the index" from a service — the triggers already caught it, and a second write
+  would duplicate the row.
+- `ensure_search_index()` runs from `create_tables()` and **backfills on first
+  creation**. Any new source added to `SOURCES` needs the same treatment for rows
+  that already exist: bump it via `POST /api/search/reindex` after deploying, or
+  the old rows stay unfindable.
+- User text reaches FTS5 only through `to_match_query()` in
+  `app/services/search.py`, which drops everything that is not a letter or digit
+  and wraps each token in quotes. **Never** interpolate a raw query into a MATCH.
+- The whole feature is SQLite-only and degrades to "no results" elsewhere, never
+  to a 500.
+
 ## File size limits
 
 Keep service files under 150 lines. If a service grows beyond that, split by domain.
