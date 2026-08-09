@@ -24,6 +24,7 @@ import app.models  # noqa: F401,E402  — registers every table
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 from app.services import admin_key  # noqa: E402
+from app.services.search_index import drop_search_index, ensure_search_index  # noqa: E402
 
 
 class FakeTelegram:
@@ -74,11 +75,16 @@ def _reset_rate_limiter():
 @pytest.fixture()
 def db():
     Base.metadata.create_all(bind=engine)
+    # The search index is a virtual table, so `drop_all` neither creates nor
+    # removes it — without building and tearing it down here, one test's rows
+    # would still be findable in the next one.
+    ensure_search_index(engine)
     session = SessionLocal()
     try:
         yield session
     finally:
         session.close()
+        drop_search_index(engine)
         Base.metadata.drop_all(bind=engine)
 
 

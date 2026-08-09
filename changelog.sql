@@ -326,3 +326,70 @@ CREATE TABLE IF NOT EXISTS event_outcomes (
     note        TEXT,
     recorded_at VARCHAR NOT NULL
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 010 — Universal search (SQLite FTS5)
+-- Date: 2026-08-09
+--
+-- Applied by ensure_search_index() at startup (app/services/search_index.py),
+-- right after create_all() and ensure_columns(). Idempotent, and SQLite-only.
+--
+-- ⚠️ This migration is NOT just a CREATE: on first run it BACKFILLS the index
+-- from every row that already exists. Without that step his diary, tasks and
+-- inbox would only become findable once he happened to edit them again.
+-- -----------------------------------------------------------------------------
+
+-- ONE index for all five searchable things rather than one per model. `kind`
+-- and `ref` are UNINDEXED (stored, never tokenized) and together form the deep
+-- link; `day` is the date the thing is ABOUT, so a hit can be dated without
+-- joining back to its source table.
+--
+-- remove_diacritics 2 folds й→и and ё→е on both sides of the query — he types
+-- the word, not the spelling.
+CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+    kind UNINDEXED,
+    ref UNINDEXED,
+    day UNINDEXED,
+    title,
+    body,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+
+-- Sync is by TRIGGER, not by application code: every write path — web, the
+-- Telegram bot, an inbox triage, a future one nobody has written yet — goes
+-- through the same three statements, so the index cannot drift because a caller
+-- forgot to update it. Three triggers per source table, generated from the
+-- SOURCES table in app/services/search_index.py; the update trigger deletes by
+-- `old` and inserts from `new` so a renamed writing leaves no ghost row.
+--
+--   articles       -> kind 'article', ref slug, body = description + body_md
+--   diary_entries  -> kind 'diary',   ref day,  body = body_md
+--   tasks          -> kind 'task',    ref id,   body = notes
+--   calendar_events-> kind 'event',   ref id,   body = notes
+--   inbox_items    -> kind 'inbox',   ref id,   body = text (title stays '')
+--
+-- Shape of each, with `articles` as the example:
+--
+-- CREATE TRIGGER search_index_article_ai AFTER INSERT ON articles BEGIN
+--     INSERT INTO search_index(kind, ref, day, title, body)
+--     VALUES ('article', new.slug, new.date, new.title,
+--             coalesce(new.description,'') || char(10) || coalesce(new.body_md,''));
+-- END;
+-- CREATE TRIGGER search_index_article_au AFTER UPDATE ON articles BEGIN
+--     DELETE FROM search_index WHERE kind = 'article' AND ref = old.slug;
+--     INSERT INTO search_index(...) VALUES (...);   -- as above, from `new`
+-- END;
+-- CREATE TRIGGER search_index_article_ad AFTER DELETE ON articles BEGIN
+--     DELETE FROM search_index WHERE kind = 'article' AND ref = old.slug;
+-- END;
+
+-- The backfill, run once when the virtual table is first created:
+--
+-- INSERT INTO search_index(kind, ref, day, title, body)
+-- SELECT 'article', slug, date, title,
+--        coalesce(description,'') || char(10) || coalesce(body_md,'')
+-- FROM articles;                                    -- and one per source table
+--
+-- POST /api/search/reindex runs it again from scratch — the escape hatch for a
+-- write that bypassed the triggers entirely, such as a restored backup.

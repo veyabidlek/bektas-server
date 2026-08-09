@@ -66,6 +66,11 @@ def ensure_columns() -> None:
 def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    # Imported here, not at module scope: search_index reads `engine` from this
+    # module, and a top-level import would be a cycle.
+    from app.services.search_index import ensure_search_index
+
+    ensure_search_index(engine)
 
 
 def drop_tables() -> None:
