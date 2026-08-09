@@ -64,6 +64,22 @@ class TelegramClient:
     def get_me(self) -> dict:
         return self._call("getMe", timeout=15)
 
+    # --- profile (menu + about text) ---
+
+    def set_my_commands(self, commands: list[dict]) -> None:
+        """Publish the blue "Menu"/"/" command list. Default scope, no language —
+        a one-user bot needs no per-scope complexity. Raises on failure; the
+        caller decides whether that is fatal (it is not — see main._register_profile)."""
+        self._call("setMyCommands", {"commands": commands}, timeout=15)
+
+    def set_my_description(self, description: str) -> None:
+        """The longer about text shown on the bot's profile / empty-chat screen."""
+        self._call("setMyDescription", {"description": description}, timeout=15)
+
+    def set_my_short_description(self, short_description: str) -> None:
+        """The one-line tagline under the bot's name."""
+        self._call("setMyShortDescription", {"short_description": short_description}, timeout=15)
+
     def download_file(self, file_id: str) -> bytes | None:
         """Photo bytes, or None if Telegram will not give them up."""
         try:

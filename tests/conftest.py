@@ -41,6 +41,18 @@ class FakeTelegram:
         self.edited: list[dict] = []
         self.answers: list[str] = []
         self.files: dict[str, bytes] = {}
+        self.commands: list[dict] | None = None
+        self.short_description: str | None = None
+        self.description: str | None = None
+
+    def set_my_commands(self, commands):
+        self.commands = commands
+
+    def set_my_short_description(self, short_description):
+        self.short_description = short_description
+
+    def set_my_description(self, description):
+        self.description = description
 
     def send_message(self, chat_id, text, buttons=None, reply_to=None):
         self.sent.append({"chat_id": chat_id, "text": text, "buttons": buttons})

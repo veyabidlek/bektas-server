@@ -69,6 +69,8 @@ def run() -> None:
         _idle(f"the token was rejected by Telegram ({exc})")
         return
 
+    _register_profile(tg)
+
     offset: int | None = None
     last_tick = 0.0
 
@@ -93,6 +95,25 @@ def run() -> None:
                 _tick(tg, owner)
             except Exception:  # noqa: BLE001
                 log.exception("scheduler tick failed")
+
+
+def _register_profile(tg: TelegramClient) -> None:
+    """Publish the command menu, tagline and about text.
+
+    Best-effort by design: a transient Telegram failure here logs a warning and
+    the bot polls on regardless. A menu refresh must NEVER take down polling —
+    that bit shakyrtu's bot once.
+    """
+    try:
+        tg.set_my_commands(copy.BOT_COMMANDS)
+        tg.set_my_short_description(copy.BOT_SHORT_DESCRIPTION)
+        tg.set_my_description(copy.BOT_DESCRIPTION)
+        log.info(
+            "Command menu registered (%s) + profile text set",
+            ", ".join("/" + c["command"] for c in copy.BOT_COMMANDS),
+        )
+    except TelegramError as exc:
+        log.warning("could not register command menu/profile (will run anyway): %s", exc)
 
 
 def _dispatch(tg: TelegramClient, owner: int, update: dict) -> None:

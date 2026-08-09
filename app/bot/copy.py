@@ -16,28 +16,53 @@ from datetime import datetime, timedelta
 # --- onboarding -----------------------------------------------------------
 
 START = (
-    "<b>Bektas Assistant</b>\n"
-    "Send me anything and it lands in your Inbox.\n"
+    "👋 <b>Bektas Assistant</b>\n"
+    "Your personal capture, calendar and review — all in one chat.\n"
     "\n"
-    "<b>Capture</b>\n"
-    "Text, a photo or a forward → Inbox, with buttons to file it as "
-    "Task, Event, Note or Diary.\n"
+    "📥 <b>Capture</b>\n"
+    "Send text, a photo or a forward and it lands in your Inbox, with buttons "
+    "to file it as Task, Event, Note or Diary.\n"
     "\n"
-    "<b>Reminders</b>\n"
+    "⏰ <b>Reminders</b>\n"
+    "Write it the way you'd say it:\n"
     "<code>remind me tomorrow at 15:00 call mum</code>\n"
     "<code>ертең сағат 15:00 анама қоңырау шал ескерт</code>\n"
     "→ straight onto your Calendar.\n"
     "\n"
-    "<b>Every morning</b>\n"
-    "08:00 — today's events, tasks and inbox.\n"
+    "📅 <b>Every morning</b> · 08:00\n"
+    "Today's events, tasks and inbox at a glance.\n"
     "\n"
-    "<b>Every evening</b>\n"
-    "The review: each of today's events, one tap each, then your score.\n"
+    "🌙 <b>Every evening</b>\n"
+    "The review — each of today's events, one tap each, then your score.\n"
     "<code>/review</code> runs it now.\n"
     "\n"
-    "<b>Every Sunday</b>\n"
-    "The week: what happened, what it added up to, what is coming.\n"
+    "🗓 <b>Every Sunday</b>\n"
+    "Your week — what happened, what it added up to, what's coming.\n"
     "<code>/digest</code> runs it now."
+)
+
+# --- the command menu + profile text (set once at startup) ----------------
+# The blue "Menu"/"/" list. Sentence case, no trailing period, each line
+# saying what the command really does. /help is a working alias of /start and
+# is deliberately NOT a second menu row — a duplicate entry reads as noise.
+BOT_COMMANDS = [
+    {"command": "start", "description": "What this bot does and how to use it"},
+    {"command": "review", "description": "Review today's events and score the day"},
+    {"command": "digest", "description": "This week — what happened and what's next"},
+]
+
+# The tagline under the bot's name (setMyShortDescription, ≤120 chars).
+BOT_SHORT_DESCRIPTION = "Your personal capture, calendar & review assistant."
+
+# The about text on the profile / empty-chat screen (setMyDescription, ≤512).
+# Plain text — no HTML here, so the site's words carry the tone on their own.
+BOT_DESCRIPTION = (
+    "Send me any thought, photo or forward — it lands in your Inbox to file "
+    "as a Task, Event, Note or Diary entry.\n\n"
+    "Type a reminder like “remind me tomorrow at 15:00 call mum” and it goes "
+    "straight onto your Calendar.\n\n"
+    "Every morning: today at a glance. Every evening: the review. "
+    "Every Sunday: your week."
 )
 
 REFUSED = "Sorry — this is a private bot."

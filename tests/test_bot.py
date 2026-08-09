@@ -164,6 +164,41 @@ def test_start_explains_itself(db):
     assert "don't know that command" in tg.sent[1]["text"]
 
 
+# --- the command menu + profile (published once at startup) ---------------
+
+
+def test_startup_registers_the_command_menu_and_profile():
+    from app.bot import copy, main
+
+    tg = FakeTelegram()
+    main._register_profile(tg)
+
+    # Every user-facing command the bot handles is in the menu…
+    assert [c["command"] for c in tg.commands] == ["start", "review", "digest"]
+    # …each with a helpful, non-empty, punctuation-free-ending description.
+    for c in tg.commands:
+        assert c["description"].strip()
+        assert not c["description"].endswith(".")
+
+    assert tg.short_description == copy.BOT_SHORT_DESCRIPTION
+    assert tg.short_description and len(tg.short_description) <= 120
+    assert "Inbox" in tg.description
+    assert len(tg.description) <= 512
+
+
+def test_a_menu_registration_failure_never_crashes_startup():
+    """A Telegram hiccup at startup must warn, not take down polling."""
+    from app.bot import main
+    from app.bot.client import TelegramError
+
+    class Boom(FakeTelegram):
+        def set_my_commands(self, commands):
+            raise TelegramError("setMyCommands failed: 429 Too Many Requests")
+
+    # Must return normally — the bot goes on to poll.
+    main._register_profile(Boom())
+
+
 # --- triage from a button -------------------------------------------------
 
 
