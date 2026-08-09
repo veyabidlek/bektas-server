@@ -139,6 +139,21 @@ def test_a_reminder_message_becomes_a_calendar_event_not_an_inbox_item(db):
     # Confirm-or-fix buttons come back with it.
     assert [b["text"] for b in tg.sent[0]["buttons"][0]] == ["✅ Right", "✏️ Change"]
 
+    # "✅ Right" only acknowledges — but it has to acknowledge, not raise.
+    handlers.handle_callback(
+        db,
+        tg,
+        {
+            "id": "cb1",
+            "data": f"rc:{events[0].id}",
+            "from": {"id": OWNER},
+            "message": {"message_id": 5, "chat": {"id": OWNER}},
+        },
+        OWNER,
+    )
+    assert tg.answers[-1] == "On your calendar."
+    assert calendar_svc.list_events(db)[0].title == "позвонить маме"
+
 
 def test_start_explains_itself(db):
     tg = FakeTelegram()

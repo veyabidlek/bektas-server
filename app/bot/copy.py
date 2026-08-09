@@ -73,6 +73,9 @@ FAILED = "Something went wrong. Try again."
 REMINDER_CANCELLED = "📥 Reminder removed — kept in your Inbox."
 
 DONE_DISMISS = "Dismissed"
+# The toast on "✅ Right" — confirming a parsed reminder changes nothing, it
+# only says so.
+DONE_EVENT = "On your calendar."
 
 # --- formatting helpers ---------------------------------------------------
 
