@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.bot import copy, review
+from app.bot import copy, review, weekly
 from app.bot.client import TelegramClient, button
 from app.services import inbox as inbox_svc
 from app.services import inbox_triage as triage
@@ -116,6 +116,10 @@ def _handle_command(db: Session, tg: TelegramClient, chat_id: int, text: str) ->
         # same rule the scheduled one follows.
         if not review.send_review(db, tg, chat_id):
             tg.send_message(chat_id, copy.REVIEW_NOTHING)
+    elif command == "/digest":
+        # The Sunday message, for the week he is currently in. Unlike /review
+        # this always answers: a quiet week is still an answer.
+        weekly.send_weekly(db, tg, chat_id)
     else:
         tg.send_message(chat_id, copy.UNKNOWN_COMMAND)
 

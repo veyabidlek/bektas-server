@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models.calendar import CalendarEvent
 from app.models.task import Task
 from app.services import review as review_svc
+from app.services import weekly as weekly_svc
 from app.services.calendar import ASTANA
 from app.services.settings import get_setting, set_setting
 
@@ -30,6 +31,11 @@ DIGEST_SETTING = "bot_last_digest_day"
 # The evening review, like the digest, is once a day and remembers the day it
 # last went out — so a restart at 21:31 does not ask him everything twice.
 REVIEW_SETTING = "bot_last_review_day"
+
+# The weekly digest: Sunday evening, once, remembering which Sunday. Same flag
+# shape again — the day string is the idempotency key everywhere in this bot.
+WEEKLY_SETTING = "bot_last_weekly_day"
+SUNDAY = 6
 
 
 @dataclass
@@ -105,6 +111,31 @@ def should_send_review(
         hour, minute = (int(part) for part in review_svc.normalize_time(review_time).split(":"))
     except ValueError:
         hour, minute = (int(part) for part in review_svc.DEFAULT_REVIEW_TIME.split(":"))
+    return (now.hour, now.minute) >= (hour, minute)
+
+
+def should_send_weekly(
+    now: datetime, last_sent_day: str | None, digest_time: str
+) -> bool:
+    """One weekly digest, on a Sunday, at or after the configured Almaty time.
+
+    A Monday restart must not send Sunday's digest late: the weekday check is
+    what keeps the week's boundary honest, and the day flag is what keeps a
+    restart at 20:01 from sending it twice.
+    """
+    if now.weekday() != SUNDAY:
+        return False
+
+    today = now.strftime("%Y-%m-%d")
+    if last_sent_day == today:
+        return False
+
+    try:
+        hour, minute = (int(part) for part in review_svc.normalize_time(digest_time).split(":"))
+    except ValueError:
+        hour, minute = (
+            int(part) for part in weekly_svc.DEFAULT_DIGEST_TIME.split(":")
+        )
     return (now.hour, now.minute) >= (hour, minute)
 
 
@@ -198,3 +229,11 @@ def record_review_sent(db: Session, now: datetime) -> None:
 
 def last_review_day(db: Session) -> str | None:
     return get_setting(db, REVIEW_SETTING)
+
+
+def record_weekly_sent(db: Session, now: datetime) -> None:
+    set_setting(db, WEEKLY_SETTING, now.strftime("%Y-%m-%d"))
+
+
+def last_weekly_day(db: Session) -> str | None:
+    return get_setting(db, WEEKLY_SETTING)

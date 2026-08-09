@@ -12,11 +12,12 @@ import os
 import time
 from datetime import datetime
 
-from app.bot import copy, review, scheduler
+from app.bot import copy, review, scheduler, weekly
 from app.bot.client import TelegramClient, TelegramError
 from app.bot.handlers import handle_callback, handle_message
 from app.database import SessionLocal
 from app.services import review as review_svc
+from app.services import weekly as weekly_svc
 from app.services.calendar import ASTANA
 
 logging.basicConfig(
@@ -36,6 +37,10 @@ def _owner_id() -> int | None:
 
 def _digest_enabled() -> bool:
     return os.getenv("PERSONAL_BOT_MORNING_DIGEST", "true").lower() != "false"
+
+
+def _weekly_enabled() -> bool:
+    return os.getenv("PERSONAL_BOT_WEEKLY_DIGEST", "true").lower() != "false"
 
 
 def _idle(reason: str) -> None:
@@ -139,5 +144,14 @@ def _tick(tg: TelegramClient, owner: int) -> None:
             # counts as "asked", so the empty day is not retried every minute.
             review.send_review(db, tg, owner, now.strftime("%Y-%m-%d"))
             scheduler.record_review_sent(db, now)
+
+        if _weekly_enabled() and scheduler.should_send_weekly(
+            now, scheduler.last_weekly_day(db), weekly_svc.get_digest_time(db)
+        ):
+            # This one always sends, even on a week with nothing recorded —
+            # closing the week is the point. The AI paragraph is optional and
+            # its failure is swallowed well below here.
+            weekly.send_weekly(db, tg, owner, now)
+            scheduler.record_weekly_sent(db, now)
     finally:
         db.close()

@@ -33,7 +33,11 @@ START = (
     "\n"
     "<b>Every evening</b>\n"
     "The review: each of today's events, one tap each, then your score.\n"
-    "<code>/review</code> runs it now."
+    "<code>/review</code> runs it now.\n"
+    "\n"
+    "<b>Every Sunday</b>\n"
+    "The week: what happened, what it added up to, what is coming.\n"
+    "<code>/digest</code> runs it now."
 )
 
 REFUSED = "Sorry — this is a private bot."
@@ -257,5 +261,79 @@ def digest(
                 yesterday.done, yesterday.partial, yesterday.reviewed, yesterday.percent
             ),
         ]
+
+    return "\n".join(lines)
+
+
+# --- the Sunday weekly digest ---------------------------------------------
+
+
+def date_range(start: str, end: str) -> str:
+    """"3 – 9 Aug", or "30 Jul – 5 Aug" when the week straddles two months."""
+    first = datetime.fromisoformat(start)
+    last = datetime.fromisoformat(end)
+    left = f"{first.day} {MONTHS[first.month - 1]}" if first.month != last.month else f"{first.day}"
+    return f"{left} – {last.day} {MONTHS[last.month - 1]}"
+
+
+def _ahead_event(starts_at: str, title: str) -> str:
+    """"Mon · 09:00 · Dentist", or "Mon · Dentist" for an all-day one."""
+    label, time = _date_parts(starts_at)
+    weekday = label.split(",")[0]
+    return f"{weekday} · {time} · {title}" if time else f"{weekday} · {title}"
+
+
+def weekly_digest(stats, ahead, summary: str | None = None) -> str:
+    """The Sunday message: the week behind, the thread through it, the week ahead.
+
+    `stats` and `ahead` are the dataclasses from `app/services/weekly.py`; they
+    are read, never built here, so the counting stays in one place and the
+    wording in another. Empty sections are absent rather than zeroed, the same
+    rule the morning digest follows.
+    """
+    lines = ["🗓 <b>Your week</b>", date_range(stats.week.start, stats.week.end)]
+
+    if stats.events:
+        headline = f"📅 <b>Events</b> · {stats.events}"
+        if stats.effectiveness is not None:
+            headline += f" · {stats.effectiveness}% effective"
+        lines += ["", headline]
+        # The strip only means something once a day has been reviewed.
+        if stats.effectiveness is not None:
+            lines.append(stats.strip)
+
+    if stats.tasks_done or stats.tasks_added:
+        lines += ["", f"✅ <b>Tasks</b> · {stats.tasks_done} done · {stats.tasks_added} added"]
+
+    if stats.diary_days:
+        lines += ["", f"📔 <b>Diary</b> · {stats.diary_days}/7 days"]
+
+    if stats.inbox_captured or stats.inbox_triaged:
+        lines += [
+            "",
+            f"📥 <b>Inbox</b> · {stats.inbox_captured} captured · {stats.inbox_triaged} filed",
+        ]
+
+    if stats.is_empty:
+        lines += ["", "A quiet week — nothing recorded."]
+
+    if summary:
+        lines += ["", "🧠 <b>The thread</b>", summary]
+
+    lines += ["", f"📆 <b>Week ahead</b> · {date_range(ahead.week.start, ahead.week.end)}"]
+
+    if ahead.events:
+        lines += [_ahead_event(starts_at, title) for starts_at, title in ahead.events]
+        if ahead.event_count > len(ahead.events):
+            lines.append(f"+{ahead.event_count - len(ahead.events)} more")
+
+    if ahead.tasks:
+        lines += ["", f"✅ <b>Due</b> · {ahead.task_count}"]
+        lines += [f"• {title}" for title in ahead.tasks]
+        if ahead.task_count > len(ahead.tasks):
+            lines.append(f"+{ahead.task_count - len(ahead.tasks)} more")
+
+    if not ahead.events and not ahead.tasks:
+        lines.append("Nothing scheduled yet.")
 
     return "\n".join(lines)
