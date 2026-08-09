@@ -363,18 +363,20 @@ def test_the_site_can_read_a_day_score_and_the_strip(client, auth, db):
 
 
 def test_the_review_time_is_editable_from_the_calendar_page(client, auth):
-    assert client.get("/api/calendar/review/settings", headers=auth).json() == {
-        "review_time": "21:30"
-    }
+    # The payload carries both bot times; the weekly one is exercised in
+    # tests/test_weekly.py.
+    assert client.get("/api/calendar/review/settings", headers=auth).json()[
+        "review_time"
+    ] == "21:30"
 
     saved = client.put(
         "/api/calendar/review/settings", json={"review_time": "22:15"}, headers=auth
     )
     assert saved.status_code == 200
     assert saved.json()["review_time"] == "22:15"
-    assert client.get("/api/calendar/review/settings", headers=auth).json() == {
-        "review_time": "22:15"
-    }
+    assert client.get("/api/calendar/review/settings", headers=auth).json()[
+        "review_time"
+    ] == "22:15"
 
     bad = client.put(
         "/api/calendar/review/settings", json={"review_time": "99:99"}, headers=auth

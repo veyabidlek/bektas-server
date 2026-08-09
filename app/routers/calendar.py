@@ -17,11 +17,13 @@ from app.schemas.review import (
     EventOutcomeOut,
     OutcomeIn,
     ReviewSettings,
+    ReviewSettingsIn,
     ReviewSummary,
 )
 from app.services import calendar as svc
 from app.services import gcal
 from app.services import review as review_svc
+from app.services import weekly as weekly_svc
 from app.services.calendar import ASTANA
 
 # Every route here is admin-only: the calendar is Bektas's own, and unlike the
@@ -96,21 +98,33 @@ def delete_event(
 # /review/{day}, or "settings" would be read as a date.
 
 
+def _bot_times(db: Session) -> ReviewSettings:
+    return ReviewSettings(
+        review_time=review_svc.get_review_time(db),
+        weekly_digest_time=weekly_svc.get_digest_time(db),
+    )
+
+
 @router.get("/review/settings", response_model=ReviewSettings)
 def review_settings(db: Session = Depends(get_db), _: None = Depends(require_admin)):
-    return ReviewSettings(review_time=review_svc.get_review_time(db))
+    return _bot_times(db)
 
 
 @router.put("/review/settings", response_model=ReviewSettings)
 def update_review_settings(
-    data: ReviewSettings,
+    data: ReviewSettingsIn,
     db: Session = Depends(get_db),
     _: None = Depends(require_admin),
 ):
+    """Saves whichever times were sent, and always answers with both."""
     try:
-        return ReviewSettings(review_time=review_svc.set_review_time(db, data.review_time))
+        if data.review_time is not None:
+            review_svc.set_review_time(db, data.review_time)
+        if data.weekly_digest_time is not None:
+            weekly_svc.set_digest_time(db, data.weekly_digest_time)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _bot_times(db)
 
 
 @router.get("/review/summary", response_model=ReviewSummary)

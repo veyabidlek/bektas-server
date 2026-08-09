@@ -39,6 +39,19 @@ class ReviewSummary(BaseModel):
 
 
 class ReviewSettings(BaseModel):
-    """"HH:MM" in Asia/Almaty — when the bot asks how the day went."""
+    """When the bot writes, in Asia/Almaty. Both are "HH:MM".
+
+    `review_time` is the nightly "how did today go?"; `weekly_digest_time` is
+    the Sunday digest. They live in one payload because they are one idea to
+    him — when the bot talks — and one request for the panel that edits them.
+    """
 
     review_time: str
+    weekly_digest_time: str
+
+
+class ReviewSettingsIn(BaseModel):
+    """A partial save: each field is edited on its own, so each arrives alone."""
+
+    review_time: str | None = None
+    weekly_digest_time: str | None = None
