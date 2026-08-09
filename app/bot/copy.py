@@ -11,6 +11,7 @@ Telegram HTML, emoji used sparingly as section accents (📅 ✅ 📥 📔 ⏰).
 
 from __future__ import annotations
 
+import html
 from datetime import datetime, timedelta
 
 # --- onboarding -----------------------------------------------------------
@@ -68,6 +69,45 @@ BOT_DESCRIPTION = (
 REFUSED = "Sorry — this is a private bot."
 
 UNKNOWN_COMMAND = "I don't know that command. Just send me the thought."
+
+# --- the persistent reply keyboard (sits above the text box) ---------------
+# Four taps for the four things worth doing on demand. A tap arrives as a plain
+# text message whose text is exactly the label — handlers match these BEFORE the
+# capture fallback, so a tap never lands in the Inbox as a note.
+BTN_MENU_REVIEW = "🌙 Review"   # → the evening review, now (same as /review)
+BTN_MENU_WEEK = "🗓 Week"       # → the weekly digest, now (same as /digest)
+BTN_MENU_TODAY = "📅 Today"     # → today's agenda (the morning-digest view)
+BTN_MENU_INBOX = "📥 Inbox"     # → what is still waiting in the Inbox
+
+MENU_KEYBOARD = [
+    [BTN_MENU_REVIEW, BTN_MENU_WEEK],
+    [BTN_MENU_TODAY, BTN_MENU_INBOX],
+]
+
+# The set the message handler checks against — a tap is one of exactly these.
+MENU_LABELS = {BTN_MENU_REVIEW, BTN_MENU_WEEK, BTN_MENU_TODAY, BTN_MENU_INBOX}
+
+
+def inbox_list(items) -> str:
+    """The 📥 button's answer: what is still untriaged, newest first.
+
+    Free-form captured text is escaped — a stray "<" would break an HTML send.
+    """
+    if not items:
+        return "📥 <b>Inbox</b>\nAll clear — nothing to triage."
+
+    lines = [f"📥 <b>Inbox</b> · {len(items)} to triage"]
+    for item in items[:15]:
+        text = (getattr(item, "text", "") or "").strip().replace("\n", " ")
+        if not text:
+            text = "🖼 photo" if getattr(item, "images", None) else "(empty)"
+        if len(text) > 60:
+            text = text[:59] + "…"
+        lines.append(f"• {html.escape(text, quote=False)}")
+    if len(items) > 15:
+        lines.append(f"+{len(items) - 15} more")
+    lines.append("\nTap a captured thought on the site to file it.")
+    return "\n".join(lines)
 
 # --- capture --------------------------------------------------------------
 

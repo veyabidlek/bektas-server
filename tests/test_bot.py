@@ -199,6 +199,89 @@ def test_a_menu_registration_failure_never_crashes_startup():
     main._register_profile(Boom())
 
 
+# --- the persistent reply keyboard ----------------------------------------
+
+
+def test_start_raises_the_persistent_keyboard(db):
+    from app.bot import copy
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message("/start"), OWNER)
+    assert tg.sent[0]["keyboard"] == copy.MENU_KEYBOARD
+
+
+def test_reply_keyboard_markup_is_persistent_and_resized():
+    from app.bot import client, copy
+
+    markup = client.reply_keyboard(copy.MENU_KEYBOARD)
+    assert markup["is_persistent"] is True
+    assert markup["resize_keyboard"] is True
+    labels = [b["text"] for row in markup["keyboard"] for b in row]
+    assert labels == ["🌙 Review", "🗓 Week", "📅 Today", "📥 Inbox"]
+
+
+def test_the_inbox_button_shows_untriaged_and_does_not_capture(db):
+    """A tap on 📥 Inbox lists what's waiting — it must NOT become a note."""
+    from app.bot import copy
+
+    inbox_svc.create_item(db, "buy milk")
+    inbox_svc.create_item(db, "email the accountant")
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message(copy.BTN_MENU_INBOX), OWNER)
+
+    # The two real items are still the only ones — the tap added nothing.
+    assert [i.text for i in inbox_svc.list_items(db)] == [
+        "email the accountant",
+        "buy milk",
+    ]
+    assert tg.sent[-1]["text"].startswith("📥 <b>Inbox</b> · 2 to triage")
+    assert "buy milk" in tg.sent[-1]["text"]
+
+
+def test_the_today_button_shows_the_morning_view_and_does_not_capture(db):
+    from app.bot import copy
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message(copy.BTN_MENU_TODAY), OWNER)
+
+    assert inbox_svc.list_items(db) == []          # not captured
+    assert tg.sent[-1]["text"].split("\n")[0] == "<b>Today</b>"
+
+
+def test_the_review_button_runs_the_review_not_capture(db):
+    from app.bot import copy
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message(copy.BTN_MENU_REVIEW), OWNER)
+
+    assert inbox_svc.list_items(db) == []          # not captured
+    # Empty calendar → the review's own "nothing" line, not an inbox ack.
+    assert tg.sent[-1]["text"] == copy.REVIEW_NOTHING
+
+
+def test_the_week_button_runs_the_digest_not_capture(db):
+    from app.bot import copy
+
+    tg = FakeTelegram()
+    handlers.handle_message(db, tg, _message(copy.BTN_MENU_WEEK), OWNER)
+
+    assert inbox_svc.list_items(db) == []          # not captured
+    assert "week" in tg.sent[-1]["text"].lower()
+
+
+def test_other_text_still_captures_normally(db):
+    """The keyboard intercept is exact-match only — everything else is a thought."""
+    from app.bot import copy
+
+    tg = FakeTelegram()
+    # A near-miss (no emoji) is not a button, so it captures as usual.
+    handlers.handle_message(db, tg, _message("Review the lease"), OWNER)
+
+    assert [i.text for i in inbox_svc.list_items(db)] == ["Review the lease"]
+    assert tg.sent[-1]["text"] == f"{copy.CAPTURED}\n{copy.TRIAGE_PROMPT}"
+
+
 # --- triage from a button -------------------------------------------------
 
 

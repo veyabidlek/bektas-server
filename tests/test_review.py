@@ -233,6 +233,7 @@ def test_finish_sends_the_score_for_what_has_been_answered(db):
         "chat_id": OWNER,
         "text": "📊 <b>Effectiveness — 100%</b>\n1/1 done",
         "buttons": None,
+        "keyboard": None,
     }
 
 
@@ -245,6 +246,7 @@ def test_answering_later_still_works_and_updates_the_score(db):
         "chat_id": OWNER,
         "text": "📊 <b>Effectiveness — 0%</b>\n0/1 done",
         "buttons": None,
+        "keyboard": None,
     }
 
     handlers.handle_callback(db, tg, _callback(f"ro:done:{event.id}"), OWNER)

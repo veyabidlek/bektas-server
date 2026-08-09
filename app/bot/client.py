@@ -102,6 +102,7 @@ class TelegramClient:
         text: str,
         buttons: list[list[dict]] | None = None,
         reply_to: int | None = None,
+        keyboard: list[list[str]] | None = None,
     ) -> dict | None:
         payload: dict = {
             "chat_id": chat_id,
@@ -109,8 +110,13 @@ class TelegramClient:
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
+        # A message carries one reply_markup. Inline buttons (a flow) win; the
+        # persistent keyboard is a chat-level thing Telegram keeps showing from
+        # the last message that set it, so it survives inline-button messages.
         if buttons:
             payload["reply_markup"] = {"inline_keyboard": buttons}
+        elif keyboard:
+            payload["reply_markup"] = reply_keyboard(keyboard)
         if reply_to:
             payload["reply_to_message_id"] = reply_to
             payload["allow_sending_without_reply"] = True
@@ -157,3 +163,15 @@ class TelegramClient:
 
 def button(text: str, data: str) -> dict:
     return {"text": text, "callback_data": data}
+
+
+def reply_keyboard(rows: list[list[str]]) -> dict:
+    """A persistent ReplyKeyboardMarkup — tappable buttons above the text box.
+
+    `is_persistent` keeps it up after a tap; `resize_keyboard` shrinks it to fit.
+    """
+    return {
+        "keyboard": [[{"text": label} for label in row] for row in rows],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }

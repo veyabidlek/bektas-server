@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.bot import copy, review, weekly
+from app.bot import copy, review, scheduler, weekly
 from app.bot.client import TelegramClient, button
 from app.services import inbox as inbox_svc
 from app.services import inbox_triage as triage
@@ -68,6 +68,13 @@ def handle_message(db: Session, tg: TelegramClient, message: dict, chat_id: int)
         _handle_command(db, tg, chat_id, text)
         return
 
+    # A tap on the persistent keyboard arrives as plain text equal to the label.
+    # Match it here — BEFORE any capture — so a tap runs its flow and is never
+    # filed into the Inbox as a note.
+    if text in copy.MENU_LABELS and not photos:
+        _handle_menu(db, tg, chat_id, text)
+        return
+
     # A reply quoting a review's note prompt is a note, not a new thought.
     if message.get("reply_to_message") and review.save_note(db, tg, chat_id, message):
         return
@@ -110,18 +117,36 @@ def handle_message(db: Session, tg: TelegramClient, message: dict, chat_id: int)
 def _handle_command(db: Session, tg: TelegramClient, chat_id: int, text: str) -> None:
     command = text.split()[0].split("@")[0].lower()
     if command in ("/start", "/help"):
-        tg.send_message(chat_id, copy.START)
+        # The /start reply is what first raises the persistent keyboard.
+        tg.send_message(chat_id, copy.START, keyboard=copy.MENU_KEYBOARD)
     elif command == "/review":
         # On demand, whatever the clock says — and silent on an empty day, the
         # same rule the scheduled one follows.
         if not review.send_review(db, tg, chat_id):
-            tg.send_message(chat_id, copy.REVIEW_NOTHING)
+            tg.send_message(chat_id, copy.REVIEW_NOTHING, keyboard=copy.MENU_KEYBOARD)
     elif command == "/digest":
         # The Sunday message, for the week he is currently in. Unlike /review
         # this always answers: a quiet week is still an answer.
         weekly.send_weekly(db, tg, chat_id)
     else:
-        tg.send_message(chat_id, copy.UNKNOWN_COMMAND)
+        tg.send_message(chat_id, copy.UNKNOWN_COMMAND, keyboard=copy.MENU_KEYBOARD)
+
+
+def _handle_menu(db: Session, tg: TelegramClient, chat_id: int, label: str) -> None:
+    """A tap on the persistent keyboard — routed to the same flows as the
+    commands, reusing existing builders. Each reasserts the keyboard so it stays."""
+    if label == copy.BTN_MENU_REVIEW:
+        if not review.send_review(db, tg, chat_id):
+            tg.send_message(chat_id, copy.REVIEW_NOTHING, keyboard=copy.MENU_KEYBOARD)
+    elif label == copy.BTN_MENU_WEEK:
+        weekly.send_weekly(db, tg, chat_id)
+    elif label == copy.BTN_MENU_TODAY:
+        # The morning-digest view, on demand — reuses the scheduler's builder.
+        message = scheduler.digest_message(db, datetime.now(ASTANA))
+        tg.send_message(chat_id, message, keyboard=copy.MENU_KEYBOARD)
+    elif label == copy.BTN_MENU_INBOX:
+        items = inbox_svc.list_items(db, triaged=False)
+        tg.send_message(chat_id, copy.inbox_list(items), keyboard=copy.MENU_KEYBOARD)
 
 
 def _create_reminder(db, tg, chat_id, reminder, original: str) -> None:

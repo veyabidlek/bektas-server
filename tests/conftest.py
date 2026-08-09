@@ -54,8 +54,10 @@ class FakeTelegram:
     def set_my_description(self, description):
         self.description = description
 
-    def send_message(self, chat_id, text, buttons=None, reply_to=None):
-        self.sent.append({"chat_id": chat_id, "text": text, "buttons": buttons})
+    def send_message(self, chat_id, text, buttons=None, reply_to=None, keyboard=None):
+        self.sent.append(
+            {"chat_id": chat_id, "text": text, "buttons": buttons, "keyboard": keyboard}
+        )
         return {"message_id": len(self.sent)}
 
     def edit_message(self, chat_id, message_id, text, buttons=None):
