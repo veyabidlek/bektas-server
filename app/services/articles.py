@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.article import Article, Comment
@@ -20,6 +21,31 @@ def list_articles(
     if levels is not None:
         q = q.filter(Article.visibility.in_(levels))
     return q.order_by(Article.date.desc()).all()
+
+
+def list_backlinks(db: Session, slug: str, levels: list[str]) -> list[Article]:
+    """Articles whose markdown mentions `[[slug]]` (or the labelled
+    `[[slug|…]]` form) — the "Mentioned in" panel. Only body_md is searched:
+    wikilinks are a new authoring feature, legacy JSON bodies never carry
+    them. Substring match is safe because slugs are url-safe (no LIKE
+    metacharacters), and `[[slug]]`/`[[slug|` can't false-positive on a
+    LONGER slug (`[[my-note-2]]` doesn't contain `[[my-note]]` + closer)."""
+    exact = f"[[{slug}]]"
+    labelled = f"[[{slug}|"
+    return (
+        db.query(Article)
+        .filter(
+            Article.slug != slug,
+            Article.archived == False,  # noqa: E712
+            Article.visibility.in_(levels),
+            or_(
+                Article.body_md.contains(exact),
+                Article.body_md.contains(labelled),
+            ),
+        )
+        .order_by(Article.date.desc())
+        .all()
+    )
 
 
 def get_article(db: Session, slug: str) -> Article | None:

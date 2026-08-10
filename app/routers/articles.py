@@ -44,6 +44,34 @@ def get_articles(
     ]
 
 
+@router.get("/{slug}/backlinks", response_model=list[ArticleSummary])
+def get_article_backlinks(
+    slug: str,
+    db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
+):
+    """Articles that mention `[[slug]]` — visibility-filtered both ways: the
+    target must be visible to the viewer (404 otherwise), and only sources
+    the viewer may read are listed."""
+    article = svc.get_article(db, slug)
+    if not article or article.visibility not in visible_levels(level):
+        raise HTTPException(status_code=404, detail="Article not found")
+    rows = svc.list_backlinks(db, slug, levels=visible_levels(level))
+    return [
+        ArticleSummary(
+            slug=a.slug,
+            title=a.title,
+            description=a.description,
+            date=a.date,
+            read_time=a.read_time,
+            comment_count=len(a.comments),
+            archived=a.archived,
+            visibility=a.visibility,
+        )
+        for a in rows
+    ]
+
+
 @router.get("/{slug}", response_model=ArticleOut)
 def get_article(
     slug: str,
