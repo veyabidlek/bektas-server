@@ -393,3 +393,33 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
 --
 -- POST /api/search/reindex runs it again from scratch — the escape hatch for a
 -- write that bypassed the triggers entirely, such as a restored backup.
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 011 — Hosted portfolio screenshots
+-- Date: 2026-08-10
+--
+-- New table, created by create_all() at startup. No new columns anywhere, so
+-- ensure_columns() has nothing to do.
+-- -----------------------------------------------------------------------------
+
+-- A screenshot for the projects page, hosted here instead of linked from
+-- somewhere else. Deliberately UNBOUND to a project: the add-project form needs
+-- a URL before the project row exists, so an upload cannot carry a project id.
+-- `portfolio_projects.screenshot_url` merely points at /api/portfolio/images/<id>
+-- — an external URL still works and nothing enforces the link.
+--
+-- Bytes live on the volume at /data/uploads/portfolio (backed up by
+-- scripts/backup.sh along with the rest of /data/uploads); only metadata here.
+--
+-- Serving is PUBLIC — a project card is public content and its <img> has to
+-- load for a logged-out reader — while upload and delete stay admin-only.
+CREATE TABLE IF NOT EXISTS portfolio_images (
+    id           VARCHAR PRIMARY KEY,
+    filename     VARCHAR NOT NULL,
+    content_type VARCHAR NOT NULL,
+    width        INTEGER,
+    height       INTEGER,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    created_at   VARCHAR NOT NULL
+);

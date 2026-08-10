@@ -27,6 +27,17 @@ class PortfolioProjectCreate(BaseModel):
     visibility: str = "public"
 
 
+class PortfolioImageOut(BaseModel):
+    """A hosted screenshot. `url` is ready to drop straight into
+    `screenshot_url` — it is the same-origin route that serves the bytes."""
+
+    id: str
+    url: str
+    width: int | None = None
+    height: int | None = None
+    created_at: str
+
+
 class PortfolioProjectUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
