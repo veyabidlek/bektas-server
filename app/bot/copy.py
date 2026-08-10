@@ -69,7 +69,9 @@ BOT_DESCRIPTION = (
     "Type a reminder like “remind me tomorrow at 15:00 call mum” and it goes "
     "straight onto your Calendar.\n\n"
     "Every morning: today at a glance. Every evening: the review. "
-    "Every Sunday: your week."
+    "Every Sunday: your week.\n\n"
+    "Ask me anything about your own day with /a — I answer from your calendar, "
+    "tasks and habits, and I tell you the truth about them."
 )
 
 REFUSED = "Sorry — this is a private bot."
