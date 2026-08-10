@@ -44,6 +44,10 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # Set once the Telegram bot has pinged about an event, so a restart cannot
     # double-send. Added 2026-08-08 when the table already had rows.
     ("calendar_events", "reminder_fired_at", "VARCHAR"),
+    # What a habit is for — "education" / "health" / "islam". Nullable with no
+    # default: every habit Bektas already tracks stays ungrouped until he says
+    # otherwise. Added 2026-08-10 to a table full of rows.
+    ("habits", "category", "VARCHAR"),
 ]
 
 

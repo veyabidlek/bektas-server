@@ -469,3 +469,23 @@ CREATE TABLE IF NOT EXISTS reading_items (
 
 -- The list is read newest-finished-first, so the ordering column is indexed.
 CREATE INDEX IF NOT EXISTS ix_reading_items_completed ON reading_items (completed);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 013 — Habit categories
+-- Date: 2026-08-10
+--
+-- A new column on a table that already has rows, so create_all() will NOT add
+-- it. Applied automatically at startup by ensure_columns() in app/database.py
+-- (entry: habits/category), which is idempotent. Recorded here for the history.
+-- -----------------------------------------------------------------------------
+
+-- What a habit is *for* — 'education' / 'health' / 'islam' / … Kept a free
+-- string rather than an enum, the same reasoning as reading_items.category and
+-- tasks.source: a new grouping must cost no migration.
+--
+-- Nullable with NO default: every habit already tracked stays ungrouped until
+-- Bektas says otherwise, and a blank category from the UI is normalized to
+-- NULL on the way in (app/services/habits.py normalize_category) so the list
+-- never grows an empty-string group.
+ALTER TABLE habits ADD COLUMN category VARCHAR;

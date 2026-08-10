@@ -3,16 +3,69 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.habit import Habit, HabitCompletion
-from app.schemas.habit import HabitOut, HabitStats
+from app.schemas.habit import HabitOut, HabitStats, HabitUpdate
+
+
+def normalize_category(value: str | None) -> str | None:
+    """Trim it; blank means ungrouped.
+
+    Pure, and the single place the rule lives — an empty box in the UI and a
+    missing field have to mean the same thing, or the list grows a "" group
+    nobody asked for.
+    """
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 def create_habit(
-    db: Session, habit_id: str, name: str, emoji: str, color: str, visibility: str = "public"
+    db: Session,
+    habit_id: str,
+    name: str,
+    emoji: str,
+    color: str,
+    visibility: str = "public",
+    category: str | None = None,
 ) -> HabitOut:
-    habit = Habit(id=habit_id, name=name, emoji=emoji, color=color, archived=False, visibility=visibility)
+    habit = Habit(
+        id=habit_id,
+        name=name,
+        emoji=emoji,
+        color=color,
+        archived=False,
+        visibility=visibility,
+        category=normalize_category(category),
+    )
     db.add(habit)
     db.commit()
-    return HabitOut(id=habit.id, name=habit.name, emoji=habit.emoji, color=habit.color, archived=False, visibility=habit.visibility, completed_days={})
+    return HabitOut(
+        id=habit.id,
+        name=habit.name,
+        emoji=habit.emoji,
+        color=habit.color,
+        archived=False,
+        visibility=habit.visibility,
+        category=habit.category,
+        completed_days={},
+    )
+
+
+def update_habit(db: Session, habit_id: str, data: HabitUpdate) -> bool:
+    """Write the fields the request actually carried. False = no such habit."""
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if not habit:
+        return False
+
+    fields = data.model_dump(exclude_unset=True)
+    if "category" in fields:
+        fields["category"] = normalize_category(fields["category"])
+    for field, value in fields.items():
+        if value is None and field != "category":
+            continue  # only the category is clearable
+        setattr(habit, field, value.strip() if isinstance(value, str) else value)
+
+    db.commit()
+    return True
 
 
 def set_visibility(db: Session, habit_id: str, visibility: str) -> bool:
@@ -61,6 +114,7 @@ def list_habits(
                 color=habit.color,
                 archived=habit.archived,
                 visibility=habit.visibility,
+                category=habit.category,
                 completed_days=completed_days,
             )
         )

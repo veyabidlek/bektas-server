@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_admin, viewer_level, visible_levels
 from app.models.habit import Habit
-from app.schemas.habit import HabitOut, HabitStats, HabitToggleResponse
+from app.schemas.habit import HabitOut, HabitStats, HabitToggleResponse, HabitUpdate
 from app.services import habits as svc
 
 router = APIRouter(prefix="/api/habits", tags=["habits"])
@@ -19,6 +19,8 @@ class HabitCreate(BaseModel):
     emoji: str
     color: str
     visibility: str = "public"
+    #: "education" / "health" / "islam" / … Blank is stored as NULL.
+    category: str | None = None
 
 
 class VisibilityUpdate(BaseModel):
@@ -45,7 +47,23 @@ def create_habit(
     existing = db.query(Habit).filter(Habit.id == data.id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Habit already exists")
-    return svc.create_habit(db, data.id, data.name, data.emoji, data.color, data.visibility)
+    return svc.create_habit(
+        db, data.id, data.name, data.emoji, data.color, data.visibility, data.category
+    )
+
+
+@router.patch("/{habit_id}", response_model=HabitOut)
+def update_habit(
+    habit_id: str,
+    data: HabitUpdate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """Edit a habit in place. Sending `category: ""` clears it back to ungrouped."""
+    if not svc.update_habit(db, habit_id, data):
+        raise HTTPException(status_code=404, detail="Habit not found")
+    habits = svc.list_habits(db, include_archived=True)
+    return next(h for h in habits if h.id == habit_id)
 
 
 @router.patch("/{habit_id}/archive")

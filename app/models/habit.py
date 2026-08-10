@@ -13,6 +13,10 @@ class Habit(Base):
     color: Mapped[str] = mapped_column(String, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     visibility: Mapped[str] = mapped_column(String, nullable=False, default="public")
+    # What the habit is *for* — "education", "health", "islam", … Kept a free
+    # string, like `reading_items.category` and `tasks.source`: a new grouping
+    # must cost no migration. NULL means ungrouped, which is the normal state.
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
 
     completions: Mapped[list["HabitCompletion"]] = relationship(
         back_populates="habit",
