@@ -30,17 +30,25 @@ def out(item: ReadingItem) -> ReadingItemOut:
     return _out(item)
 
 
-def list_reading_items(db: Session) -> list[ReadingItemOut]:
+def list_reading_items(
+    db: Session, include_not_started: bool = True
+) -> list[ReadingItemOut]:
     """Most recently finished first, unfinished books after them.
 
     `completed.is_(None)` sorts False (0) before True (1), which is how NULLs
     are pushed to the end without relying on the backend's NULLS LAST support —
     SQLite has none. `id` breaks the final tie so an import that writes a whole
     shelf within the same second still has one stable order.
+
+    `include_not_started=False` is the public view: the backlog is the owner's
+    business (Bektas 2026-08-10 — "only in admin"); visitors see only books
+    that have actually been touched.
     """
+    query = db.query(ReadingItem)
+    if not include_not_started:
+        query = query.filter(ReadingItem.status != "not_started")
     items = (
-        db.query(ReadingItem)
-        .order_by(
+        query.order_by(
             ReadingItem.completed.is_(None),
             ReadingItem.completed.desc(),
             ReadingItem.created_at.desc(),

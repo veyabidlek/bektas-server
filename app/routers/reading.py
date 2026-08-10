@@ -2,19 +2,22 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_admin
+from app.dependencies import require_admin, viewer_level
 from app.schemas.reading import ReadingItemIn, ReadingItemOut, ReadingListOut
 from app.services import reading as svc
 
-# Reads are public — the reading list is a page anyone can look at, with no
-# visibility column and nothing to gate. Writes are admin-only.
+# Reads are public — the reading list is a page anyone can look at. The one
+# gate: the not-started backlog is the owner's business and shows only to the
+# admin ("only in admin", 2026-08-10). Writes are admin-only.
 router = APIRouter(prefix="/api/reading", tags=["reading"])
 
 
 @router.get("", response_model=ReadingListOut)
-def list_reading(db: Session = Depends(get_db)):
-    """Public: no auth dependency, by design."""
-    return ReadingListOut(items=svc.list_reading_items(db))
+def list_reading(db: Session = Depends(get_db), level: str = Depends(viewer_level)):
+    """Public, but the not-started backlog is admin-only."""
+    return ReadingListOut(
+        items=svc.list_reading_items(db, include_not_started=level == "admin")
+    )
 
 
 @router.post("", response_model=ReadingItemOut, status_code=201)

@@ -21,13 +21,30 @@ def _book(client, auth, **fields):
 
 
 def test_reading_list_is_public(client, auth):
-    """The whole point is a page a logged-out visitor can read."""
-    _book(client, auth, title="Deep Work", author="Cal Newport")
+    """The whole point is a page a logged-out visitor can read. (A touched
+    status — the default not_started backlog is admin-only, tested below.)"""
+    _book(client, auth, title="Deep Work", author="Cal Newport", status="completed")
 
     anon = client.__class__(client.app)
     res = anon.get("/api/reading")
     assert res.status_code == 200
     assert [i["title"] for i in res.json()["items"]] == ["Deep Work"]
+
+
+def test_not_started_backlog_is_admin_only(client, auth):
+    """The backlog is the owner's business ("only in admin", 2026-08-10):
+    a visitor sees only books that have actually been touched."""
+    _book(client, auth, title="Someday Maybe", status="not_started")
+    _book(client, auth, title="Open Book", status="in_progress")
+
+    anon = client.__class__(client.app)
+    public_titles = [i["title"] for i in anon.get("/api/reading").json()["items"]]
+    assert public_titles == ["Open Book"]
+
+    admin_titles = [
+        i["title"] for i in client.get("/api/reading", headers=auth).json()["items"]
+    ]
+    assert set(admin_titles) == {"Someday Maybe", "Open Book"}
 
 
 def test_writes_are_admin_only(client):
