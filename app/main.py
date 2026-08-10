@@ -18,6 +18,7 @@ from app.routers import (
     habits,
     pomodoro,
     portfolio,
+    reading,
     search,
     tasks,
 )
@@ -54,6 +55,7 @@ app.include_router(calendar.router)
 app.include_router(diary.router)
 app.include_router(tasks.router)
 app.include_router(inbox.router)
+app.include_router(reading.router)
 app.include_router(search.router)
 
 
