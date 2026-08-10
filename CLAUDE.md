@@ -67,6 +67,29 @@ Follow this exact pattern (habits is the reference implementation):
 - `scripts/backup.sh` captures the database *and* `/data/uploads`. Anything new
   stored on the volume has to be added there too.
 
+## Habits
+
+- A day is a **row** in `habit_completions`, and the row carries a `state` —
+  `done` or `partial` (2026-08-10). A **missed day has no row**: that is how
+  every read already spells "not done" (stats, streaks, the assistant's
+  context), so there is no third stored value and none should be added.
+- Over the API `completed_days` is `{date: true | "partial"}`. `done`
+  serializes as the **boolean `true`**, never the string — the map was
+  `{date: true}` before partial existed and clients truthy-check it, so that is
+  the compatibility promise. Widen the domain, never re-shape the old value.
+- Two writers on purpose. `POST /{id}/mark` takes `{date, state}` with
+  `state ∈ done|partial|none` and **sets** (idempotent, `none` deletes the row)
+  — it is the swipe tracker. `POST /{id}/toggle` is the old boolean tap and is
+  **left exactly as it was**; it flips, and it clears a partial day to absent.
+  Do not give `/toggle` a second meaning.
+- A partial day **counts** in stats and keeps a streak alive. That is the same
+  call `review_score.py` makes (`done=1, partial=½, no=0`) — nearer to done
+  than to missed.
+- The `date` on `/mark` is validated to literal `YYYY-MM-DD`. Neither
+  `date.fromisoformat` (takes `20260810`) nor `strptime` (takes `2026-8-10`) is
+  strict enough alone: a key that is not what `date.isoformat()` produces is a
+  row no other read can find.
+
 ## Telegram bot
 
 - Runs as the **`bot` compose service** — same image, `python -m app.bot`, long
