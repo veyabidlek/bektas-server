@@ -8,59 +8,28 @@ The bytes go to the named volume (``/data/uploads/islam``), downscaled on the
 way in, exactly like the diary's photos. They are served through an
 auth-checked route: the portfolio's public-image exception does **not** apply
 here, this whole section is private.
+
+The mechanics are `cover_files.py`, shared with the reading shelf. What stays
+here is the one thing that is this section's own: the directory. The wrappers
+read `UPLOAD_DIR` at call time on purpose — the tests point it at a tmp_path.
 """
 
 import os
-import uuid
 from pathlib import Path
 
-from app.services.image_optimize import dimensions, optimize_image
+from app.services import cover_files
+from app.services.cover_files import MAX_UPLOAD_BYTES, media_type  # noqa: F401  — re-exported
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads")) / "islam"
 
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-
-# Only what optimize_image can emit. The content type is not stored — the
-# extension is the single source of truth for it, so the two cannot disagree.
-_TYPE_BY_EXT = {
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-    "webp": "image/webp",
-}
-
-
-def media_type(filename: str) -> str:
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    return _TYPE_BY_EXT.get(ext, "application/octet-stream")
-
 
 def path_for(filename: str) -> Path:
-    return UPLOAD_DIR / filename
+    return cover_files.path_for(UPLOAD_DIR, filename)
 
 
 def save_cover(owner_id: str, data: bytes, content_type: str) -> str:
-    """Write the optimized bytes and hand back the filename to store.
-
-    The name carries a fresh random suffix rather than being `<id>.jpg`: a
-    replaced cover must not land on the old path, or a browser that cached the
-    first one would keep showing it.
-    """
-    body, _out_type, ext = optimize_image(data, content_type)
-    dimensions(body)  # decodes early: a file Pillow cannot read is worth knowing about
-
-    filename = f"{owner_id}-{uuid.uuid4().hex[:8]}.{ext}"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    path_for(filename).write_bytes(body)
-    return filename
+    return cover_files.save_cover(UPLOAD_DIR, owner_id, data, content_type)
 
 
 def delete_cover(filename: str | None) -> None:
-    """Best effort — a missing file must never block replacing or deleting the
-    row that points at it."""
-    if not filename:
-        return
-    try:
-        path_for(filename).unlink(missing_ok=True)
-    except OSError:
-        pass
+    cover_files.delete_cover(UPLOAD_DIR, filename)
