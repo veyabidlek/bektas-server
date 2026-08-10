@@ -195,6 +195,28 @@ Follow this exact pattern (habits is the reference implementation):
   bodies and `lib/api.ts` sends `khatmId` / `pageFrom` / `targetPages`.
   Responses stay snake_case like everything else.
 
+## The reading shelf
+
+- The row has a **public half and a private half**, so the gate sits on the
+  route, not on the table. The list, the blurb and the cover are public —
+  `/reading` is a page anyone can look at. The **notes and sessions are
+  admin-only**: what he is reading is public, what he wrote about it is not.
+- Covers follow the **portfolio's exception, not the Islam shelf's rule**:
+  `GET /api/reading/covers/{id}` has no auth dependency and is `Cache-Control:
+  public`. Upload and delete stay admin-only. Storage is the same everywhere —
+  filename on the row, bytes at `/data/uploads/reading` on the volume, through
+  `app/services/cover_files.py` (shared with `islam_covers.py`; each caller
+  owns only its directory).
+- The cover is **not part of the PUT body** and must never become part of it.
+  That body is a full replace — the client sends the whole object, so an
+  omitted `description` clears — and a field it does not carry would be thrown
+  away on every title edit. The cover arrives as multipart on its own route.
+- `/api/reading/covers/{id}` is registered **before** every `/{item_id}` route.
+  `covers` sits where an int id goes: a `GET /{item_id}` added above it would
+  answer 422 on a page that has no login to explain it.
+- The only backlog rule is unchanged: `not_started` is hidden from non-admins
+  in the list. It does not extend to covers, which are public by id.
+
 ## File size limits
 
 Keep service files under 150 lines. If a service grows beyond that, split by domain.
