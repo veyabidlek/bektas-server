@@ -1,0 +1,259 @@
+"""Reading list: public to read, admin-only to write, plus the CSV parsers.
+
+The parsing half needs no database — it is where a Notion export actually
+bites (a group header, ⭐ with a variation selector, "TBD" in a numeric
+column, a BOM), so it is tested as plain functions on plain strings.
+"""
+
+import dataclasses
+
+from scripts import import_reading as csv_import
+
+
+def _book(client, auth, **fields):
+    body = {"title": "A book"} | fields
+    res = client.post("/api/reading", headers=auth, json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+# --- the API ---------------------------------------------------------------
+
+
+def test_reading_list_is_public(client, auth):
+    """The whole point is a page a logged-out visitor can read."""
+    _book(client, auth, title="Deep Work", author="Cal Newport")
+
+    anon = client.__class__(client.app)
+    res = anon.get("/api/reading")
+    assert res.status_code == 200
+    assert [i["title"] for i in res.json()["items"]] == ["Deep Work"]
+
+
+def test_writes_are_admin_only(client):
+    anon = client.__class__(client.app)
+    assert anon.post("/api/reading", json={"title": "x"}).status_code == 401
+    assert anon.put("/api/reading/1", json={"title": "x"}).status_code == 401
+    assert anon.delete("/api/reading/1").status_code == 401
+
+
+def test_crud_round_trip(client, auth):
+    created = _book(
+        client,
+        auth,
+        title="  Martin Eden  ",
+        author="Jack London",
+        category="Novel",
+        status="completed",
+        pages=480,
+        score=5,
+        started="2025-06-13",
+        completed="2025-07-05",
+    )
+    assert created["title"] == "Martin Eden"  # trimmed
+    assert created["started"] == "2025-06-13"
+    assert created["created_at"]
+
+    updated = client.put(
+        f"/api/reading/{created['id']}",
+        headers=auth,
+        json={"title": "Martin Eden", "status": "in_progress", "author": "Jack London"},
+    )
+    assert updated.status_code == 200
+    # PUT replaces: fields left out of the body are cleared, not preserved.
+    assert updated.json()["status"] == "in_progress"
+    assert updated.json()["completed"] is None
+    assert updated.json()["score"] is None
+
+    assert client.delete(f"/api/reading/{created['id']}", headers=auth).status_code == 204
+    assert client.get("/api/reading").json()["items"] == []
+
+
+def test_missing_item_is_404_not_a_crash(client, auth):
+    assert client.put("/api/reading/999", headers=auth, json={"title": "x"}).status_code == 404
+    assert client.delete("/api/reading/999", headers=auth).status_code == 404
+
+
+def test_finished_books_come_first_and_unread_ones_last(client, auth):
+    _book(client, auth, title="Older", status="completed", completed="2020-05-05")
+    _book(client, auth, title="Unread", status="not_started")
+    _book(client, auth, title="Newest", status="completed", completed="2025-02-12")
+
+    listed = client.get("/api/reading").json()["items"]
+    assert [i["title"] for i in listed] == ["Newest", "Older", "Unread"]
+
+
+def test_optional_fields_default_to_nothing(client, auth):
+    item = _book(client, auth, title="Just added")
+    assert item["status"] == "not_started"
+    assert item["author"] is None
+    assert item["category"] is None
+    assert item["score"] is None
+    assert item["pages"] is None
+    assert item["started"] is None and item["completed"] is None
+
+
+def test_blank_author_is_stored_as_nothing(client, auth):
+    """A form sends ""; the client must not have to render an empty author."""
+    assert _book(client, auth, author="   ", category="")["author"] is None
+
+
+def test_validation_rejects_bad_scores_statuses_and_dates(client, auth):
+    def post(**fields):
+        return client.post("/api/reading", headers=auth, json={"title": "x"} | fields).status_code
+
+    assert post(score=6) == 422
+    assert post(score=0) == 422
+    assert post(status="reading") == 422
+    assert post(completed="12/03/2024") == 422
+    assert post(started="not-a-date") == 422
+    assert client.post("/api/reading", headers=auth, json={"title": "   "}).status_code == 422
+
+    # The edges of the allowed ranges are fine.
+    assert post(score=1) == 201
+    assert post(score=5) == 201
+    for status in ("not_started", "in_progress", "completed", "abandoned"):
+        assert post(status=status) == 201
+
+
+# --- the CSV parsers -------------------------------------------------------
+
+
+def test_progress_maps_to_the_four_statuses():
+    assert csv_import.parse_status("Not started") == "not_started"
+    assert csv_import.parse_status("In progress") == "in_progress"
+    assert csv_import.parse_status("Completed") == "completed"
+    assert csv_import.parse_status("could not finish") == "abandoned"
+    # Case and padding are Notion's business, not ours.
+    assert csv_import.parse_status("  COMPLETED ") == "completed"
+    # An unknown or empty select must never fail the import.
+    assert csv_import.parse_status("") == "not_started"
+    assert csv_import.parse_status("Shelved") == "not_started"
+    assert csv_import.parse_status(None) == "not_started"
+
+
+def test_score_counts_stars_and_ignores_the_variation_selector():
+    assert csv_import.parse_score("⭐️⭐️⭐️⭐️⭐️") == 5
+    assert csv_import.parse_score("⭐⭐⭐") == 3
+    assert csv_import.parse_score("") is None
+    assert csv_import.parse_score("TBD") is None
+    assert csv_import.parse_score(None) is None
+
+
+def test_dates_parse_notion_s_long_form():
+    assert csv_import.parse_date("February 8, 2024") == "2024-02-08"
+    assert csv_import.parse_date("January 1, 2019") == "2019-01-01"
+    assert csv_import.parse_date("  December 19, 2025 ") == "2025-12-19"
+    assert csv_import.parse_date("") is None
+    assert csv_import.parse_date(None) is None
+    # One malformed cell must not cost the whole import.
+    assert csv_import.parse_date("8 Feb 2024") is None
+
+
+def test_pages_are_optional_integers():
+    assert csv_import.parse_pages("211") == 211
+    assert csv_import.parse_pages("") is None
+    assert csv_import.parse_pages("many") is None
+
+
+def test_the_books_group_header_is_not_a_book():
+    header = {"Name": "Books", "Progress": "Not started"}
+    assert csv_import.is_group_header(header) is True
+    assert csv_import.parse_row(header) is None
+
+    # A real book that happens to be called "Books" still imports.
+    real = {"Name": "Books", "Author": "Someone", "Progress": "Completed"}
+    assert csv_import.is_group_header(real) is False
+    assert csv_import.parse_row(real) is not None
+
+
+def test_a_row_without_a_name_is_skipped():
+    assert csv_import.parse_row({"Name": "", "Progress": "Completed"}) is None
+    assert csv_import.parse_row({"Name": "   "}) is None
+
+
+def test_a_full_row_parses_into_every_field():
+    row = csv_import.parse_row(
+        {
+            "Name": "How to Become a Straight A Student 🅰️",
+            "Author": "Cal Newport",
+            "Completed": "February 8, 2024",
+            "Day Count": "31",
+            "Progress": "Completed",
+            "Score": "⭐️⭐️⭐️⭐️⭐️",
+            "Started": "January 8, 2024",
+            "Type": "Self-Development",
+            "pages": "211",
+        }
+    )
+    assert row == csv_import.ReadingRow(
+        title="How to Become a Straight A Student 🅰️",  # emoji kept
+        author="Cal Newport",
+        category="Self-Development",
+        status="completed",
+        pages=211,
+        score=5,
+        started="2024-01-08",
+        completed="2024-02-08",
+    )
+
+
+def test_a_bare_row_leaves_everything_empty():
+    row = csv_import.parse_row(
+        {"Name": "Why We Sleep 💤 ", "Progress": "Not started", "Type": "Self-Development"}
+    )
+    assert row.title == "Why We Sleep 💤"  # trailing space trimmed
+    assert row.author is None
+    assert row.status == "not_started"
+    assert (row.score, row.pages, row.started, row.completed) == (None, None, None, None)
+
+
+def test_parse_csv_handles_the_bom_and_drops_the_header_row(tmp_path):
+    """Written with a BOM, exactly as Notion exports it."""
+    path = tmp_path / "reading.csv"
+    path.write_text(
+        "Name,Author,Completed,Day Count,Progress,Score,Started,Type,pages\n"
+        "Books,,,,Not started,,,,\n"
+        "The Little Prince,Antoine de Saint-Exupéry,\"February 11, 2024\",1,Completed,"
+        "⭐️⭐️⭐️⭐️⭐️,\"February 10, 2024\",Novel,109\n"
+        ",,,,Not started,,,,\n",
+        encoding="utf-8-sig",
+    )
+
+    rows = csv_import.parse_csv(path)
+    assert [r.title for r in rows] == ["The Little Prince"]
+    assert rows[0].author == "Antoine de Saint-Exupéry"
+    assert rows[0].score == 5
+
+
+def test_import_is_idempotent_and_case_insensitive(db, tmp_path):
+    path = tmp_path / "reading.csv"
+    path.write_text(
+        "Name,Author,Completed,Day Count,Progress,Score,Started,Type,pages\n"
+        "Clean Code,,,,Not started,,,Programming,\n"
+        "Atomic Habits,,\"January 1, 2021\",,Completed,⭐️⭐️⭐️⭐️⭐️,,Self-Development,\n",
+        encoding="utf-8-sig",
+    )
+    rows = csv_import.parse_csv(path)
+
+    assert csv_import.import_rows(db, rows) == (2, 0)
+    # Same file again: nothing new, nothing duplicated.
+    assert csv_import.import_rows(db, rows) == (0, 2)
+
+    # A title differing only in case is the same book. The real export has such
+    # a pair ("Чистый код" / "Чистый Код"), so this is not a hypothetical.
+    shouting = dataclasses.replace(rows[0], title="CLEAN CODE")
+    assert csv_import.import_rows(db, [shouting]) == (0, 1)
+
+    # Two rows of the same book inside one file collapse to one, too — the
+    # seen-set grows as the import goes.
+    fresh = dataclasses.replace(rows[0], title="Refactoring UI")
+    assert csv_import.import_rows(db, [fresh, dataclasses.replace(fresh, title="refactoring ui")]) == (1, 1)
+
+    from app.services import reading as svc
+
+    assert sorted(i.title for i in svc.list_reading_items(db)) == [
+        "Atomic Habits",
+        "Clean Code",
+        "Refactoring UI",
+    ]
