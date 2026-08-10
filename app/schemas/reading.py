@@ -1,8 +1,13 @@
 from datetime import date
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.reading import STATUSES
+
+# Generic helpers that happen to have been written for the Islam section — the
+# camelCase-or-snake_case alias and the one date format. Imported rather than
+# copied: a second `either_case` is the one that would drift.
+from app.schemas.islam import either_case, iso_date
 
 
 class ReadingItemOut(BaseModel):
@@ -93,3 +98,66 @@ class ReadingItemIn(BaseModel):
             return date.fromisoformat(raw).isoformat()
         except ValueError as exc:
             raise ValueError(f"{raw!r} is not an ISO date (YYYY-MM-DD)") from exc
+
+
+# --- notes and sessions ----------------------------------------------------
+# Both are **admin-only**, unlike the shelf they hang off: what he is reading
+# is public, what he wrote about it is not.
+#
+# The create bodies take camelCase alongside snake_case wherever the name has
+# more than one word — `lib/api.ts` sends `pageFrom` / `pageTo` / `bodyMd` and
+# its `fetchApi` does not snake-case outgoing bodies. Responses stay snake_case
+# like every other resource here.
+
+
+class ReadingNoteOut(BaseModel):
+    id: int
+    item_id: int
+    date: str
+    page_from: int | None = None
+    page_to: int | None = None
+    body_md: str
+
+
+class ReadingNoteListOut(BaseModel):
+    items: list[ReadingNoteOut]
+
+
+class ReadingNoteIn(BaseModel):
+    date: str
+    page_from: int | None = Field(
+        default=None, ge=1, validation_alias=either_case("page_from")
+    )
+    page_to: int | None = Field(default=None, ge=1, validation_alias=either_case("page_to"))
+    body_md: str = Field(default="", validation_alias=either_case("body_md"))
+
+    _date = field_validator("date")(iso_date)
+
+    @model_validator(mode="after")
+    def _range_reads_forwards(self) -> "ReadingNoteIn":
+        """Only when both ends are given — one-sided ranges are legitimate
+        ("from page 12 onwards") and open-ended notes are the common case."""
+        if self.page_from is not None and self.page_to is not None:
+            if self.page_from > self.page_to:
+                raise ValueError("page_from must not be greater than page_to")
+        return self
+
+
+class ReadingSessionOut(BaseModel):
+    id: int
+    item_id: int
+    date: str
+    pages: int
+    minutes: int | None = None
+
+
+class ReadingSessionListOut(BaseModel):
+    items: list[ReadingSessionOut]
+
+
+class ReadingSessionIn(BaseModel):
+    date: str
+    pages: int = Field(ge=0)
+    minutes: int | None = Field(default=None, ge=0)
+
+    _date = field_validator("date")(iso_date)

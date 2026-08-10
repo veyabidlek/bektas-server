@@ -4,9 +4,20 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin, viewer_level
-from app.schemas.reading import ReadingItemIn, ReadingItemOut, ReadingListOut
+from app.schemas.reading import (
+    ReadingItemIn,
+    ReadingItemOut,
+    ReadingListOut,
+    ReadingNoteIn,
+    ReadingNoteListOut,
+    ReadingNoteOut,
+    ReadingSessionIn,
+    ReadingSessionListOut,
+    ReadingSessionOut,
+)
 from app.services import reading as svc
 from app.services import reading_covers as covers
+from app.services import reading_logs as logs_svc
 from app.services.image_optimize import ALLOWED_CONTENT_TYPES
 
 # Reads are public — the reading list is a page anyone can look at, covers
@@ -112,5 +123,73 @@ def delete_reading_item(
     db: Session = Depends(get_db),
     _: None = Depends(require_admin),
 ):
-    """The cover file comes off the volume too."""
+    """Notes and sessions cascade; the cover file comes off the volume too."""
     svc.delete_reading_item(db, _item_or_404(db, item_id))
+
+
+# --- notes ----------------------------------------------------------------
+# Admin-only, every one of them — unlike the shelf they hang off. What he is
+# reading is public; what he wrote about it is not.
+
+
+@router.get("/{item_id}/notes", response_model=ReadingNoteListOut)
+def list_reading_notes(
+    item_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin)
+):
+    _item_or_404(db, item_id)
+    return ReadingNoteListOut(items=logs_svc.list_notes(db, item_id))
+
+
+@router.post("/{item_id}/notes", response_model=ReadingNoteOut, status_code=201)
+def add_reading_note(
+    item_id: int,
+    data: ReadingNoteIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    _item_or_404(db, item_id)
+    return logs_svc.add_note(db, item_id, data)
+
+
+@router.delete("/{item_id}/notes/{note_id}", status_code=204)
+def delete_reading_note(
+    item_id: int,
+    note_id: int,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    if not logs_svc.delete_note(db, item_id, note_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+
+# --- sessions -------------------------------------------------------------
+
+
+@router.get("/{item_id}/sessions", response_model=ReadingSessionListOut)
+def list_reading_sessions(
+    item_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin)
+):
+    _item_or_404(db, item_id)
+    return ReadingSessionListOut(items=logs_svc.list_sessions(db, item_id))
+
+
+@router.post("/{item_id}/sessions", response_model=ReadingSessionOut, status_code=201)
+def add_reading_session(
+    item_id: int,
+    data: ReadingSessionIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    _item_or_404(db, item_id)
+    return logs_svc.add_session(db, item_id, data)
+
+
+@router.delete("/{item_id}/sessions/{session_id}", status_code=204)
+def delete_reading_session(
+    item_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    if not logs_svc.delete_session(db, item_id, session_id):
+        raise HTTPException(status_code=404, detail="Session not found")

@@ -48,6 +48,55 @@ class ReadingItem(Base):
     # Filename on the volume, not bytes and not a URL. NULL = no cover yet.
     cover_image: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    notes: Mapped[list["ReadingNote"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
+    sessions: Mapped[list["ReadingSession"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
+
+
+class ReadingNote(Base):
+    """A thought while reading, optionally about a page range.
+
+    Unlike the row it hangs off, this is **not** public: the shelf shows what
+    he is reading, his notes on it are his own. Both logs are admin-only over
+    the API.
+
+    Integer ids, like `reading_items` — the Islam shelf's notes are strings
+    because *its* books are. Matching the neighbouring table is what keeps a
+    join readable.
+    """
+
+    __tablename__ = "reading_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("reading_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    date: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    page_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_to: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    item: Mapped["ReadingItem"] = relationship(back_populates="notes")
+
+
+class ReadingSession(Base):
+    """A sitting with the book: how many pages, and how long if he timed it."""
+
+    __tablename__ = "reading_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("reading_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    date: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    pages: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    item: Mapped["ReadingItem"] = relationship(back_populates="sessions")
+
 
 # The four states a book can be in. `abandoned` is the export's "could not
 # finish" — worth keeping visible rather than deleting, since a shelved book is

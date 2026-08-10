@@ -701,3 +701,33 @@ CREATE INDEX IF NOT EXISTS ix_islam_audio_sessions_date ON islam_audio_sessions 
 -- replace, and a field it does not carry would be cleared on every edit.
 ALTER TABLE reading_items ADD COLUMN description TEXT;
 ALTER TABLE reading_items ADD COLUMN cover_image VARCHAR;
+
+-- The two logs hanging off a book, both ADMIN-ONLY over the API — unlike the
+-- shelf row itself. What he is reading is public; what he wrote about it is
+-- not, so neither of these has a public read the way reading_items does.
+--
+-- Integer ids and an integer FK, matching reading_items. The Islam shelf's
+-- notes are VARCHAR because its books are: a log table follows the table it
+-- hangs off, not the other section.
+CREATE TABLE IF NOT EXISTS reading_notes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id   INTEGER NOT NULL REFERENCES reading_items(id) ON DELETE CASCADE,
+    date      VARCHAR NOT NULL,
+    page_from INTEGER,
+    page_to   INTEGER,
+    body_md   TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS ix_reading_notes_item_id ON reading_notes (item_id);
+CREATE INDEX IF NOT EXISTS ix_reading_notes_date ON reading_notes (date);
+
+CREATE TABLE IF NOT EXISTS reading_sessions (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES reading_items(id) ON DELETE CASCADE,
+    date    VARCHAR NOT NULL,
+    pages   INTEGER NOT NULL DEFAULT 0,
+    minutes INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS ix_reading_sessions_item_id ON reading_sessions (item_id);
+CREATE INDEX IF NOT EXISTS ix_reading_sessions_date ON reading_sessions (date);

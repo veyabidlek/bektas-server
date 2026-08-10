@@ -276,6 +276,165 @@ def test_deleting_an_item_takes_its_cover_off_the_disk(client, auth):
     assert list(covers_svc.UPLOAD_DIR.iterdir()) == []
 
 
+# --- notes and sessions ----------------------------------------------------
+
+
+def _note(client, auth, item_id, **fields):
+    body = {"date": "2026-08-09", "body_md": "A thought."} | fields
+    res = client.post(f"/api/reading/{item_id}/notes", headers=auth, json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def _session(client, auth, item_id, **fields):
+    body = {"date": "2026-08-09", "pages": 30} | fields
+    res = client.post(f"/api/reading/{item_id}/sessions", headers=auth, json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_notes_and_sessions_are_admin_only(client, auth):
+    """The shelf is public; the reading log is not. An anonymous GET on either
+    has to be a 401, not a peek at what he thought about the book."""
+    item = _book(client, auth, status="completed")
+    anon = client.__class__(client.app)
+
+    assert anon.get(f"/api/reading/{item['id']}/notes").status_code == 401
+    assert anon.post(f"/api/reading/{item['id']}/notes", json={}).status_code == 401
+    assert anon.delete(f"/api/reading/{item['id']}/notes/1").status_code == 401
+    assert anon.get(f"/api/reading/{item['id']}/sessions").status_code == 401
+    assert anon.post(f"/api/reading/{item['id']}/sessions", json={}).status_code == 401
+    assert anon.delete(f"/api/reading/{item['id']}/sessions/1").status_code == 401
+
+
+def test_a_note_round_trips_and_carries_its_item_id(client, auth):
+    item = _book(client, auth)
+    created = _note(client, auth, item["id"], page_from=10, page_to=24, body_md="On focus.")
+
+    assert created["item_id"] == item["id"]
+    assert (created["page_from"], created["page_to"]) == (10, 24)
+    assert created["body_md"] == "On focus."
+
+    listed = client.get(f"/api/reading/{item['id']}/notes", headers=auth).json()["items"]
+    assert [n["id"] for n in listed] == [created["id"]]
+
+
+def test_a_note_body_takes_camel_case_as_the_client_sends_it(client, auth):
+    """`lib/api.ts` does not snake-case outgoing bodies — both spellings land."""
+    item = _book(client, auth)
+    res = client.post(
+        f"/api/reading/{item['id']}/notes",
+        headers=auth,
+        json={"date": "2026-08-09", "pageFrom": 3, "pageTo": 9, "bodyMd": "camel"},
+    )
+    assert res.status_code == 201, res.text
+    assert (res.json()["page_from"], res.json()["page_to"]) == (3, 9)
+    assert res.json()["body_md"] == "camel"
+
+
+def test_a_page_range_has_to_read_forwards(client, auth):
+    item = _book(client, auth)
+
+    def post(**fields):
+        return client.post(
+            f"/api/reading/{item['id']}/notes",
+            headers=auth,
+            json={"date": "2026-08-09"} | fields,
+        ).status_code
+
+    assert post(page_from=40, page_to=12) == 422
+    assert post(page_from=0) == 422
+    # One-sided ranges are legitimate — "from page 12 onwards", or no range.
+    assert post(page_from=12) == 201
+    assert post(page_to=12) == 201
+    assert post(page_from=12, page_to=12) == 201
+    assert post() == 201
+    # And the date is the one format this codebase has.
+    assert post(date="09/08/2026") == 422
+
+
+def test_notes_and_sessions_come_back_newest_date_first(client, auth):
+    item = _book(client, auth)
+    _note(client, auth, item["id"], date="2026-08-01", body_md="older")
+    _note(client, auth, item["id"], date="2026-08-09", body_md="newer")
+    _session(client, auth, item["id"], date="2026-08-01", pages=5)
+    _session(client, auth, item["id"], date="2026-08-09", pages=50)
+
+    notes = client.get(f"/api/reading/{item['id']}/notes", headers=auth).json()["items"]
+    assert [n["body_md"] for n in notes] == ["newer", "older"]
+
+    sessions = client.get(f"/api/reading/{item['id']}/sessions", headers=auth).json()["items"]
+    assert [s["pages"] for s in sessions] == [50, 5]
+
+
+def test_a_session_round_trips_with_optional_minutes(client, auth):
+    item = _book(client, auth)
+    timed = _session(client, auth, item["id"], pages=42, minutes=55)
+    assert (timed["item_id"], timed["pages"], timed["minutes"]) == (item["id"], 42, 55)
+
+    untimed = _session(client, auth, item["id"], pages=3)
+    assert untimed["minutes"] is None
+
+    assert client.post(
+        f"/api/reading/{item['id']}/sessions",
+        headers=auth,
+        json={"date": "2026-08-09", "pages": -1},
+    ).status_code == 422
+
+
+def test_deleting_a_note_or_session_is_scoped_to_its_book(client, auth):
+    item = _book(client, auth)
+    other = _book(client, auth, title="Another")
+    note = _note(client, auth, item["id"])
+    session = _session(client, auth, item["id"])
+
+    # The right id under the wrong book deletes nothing.
+    assert client.delete(
+        f"/api/reading/{other['id']}/notes/{note['id']}", headers=auth
+    ).status_code == 404
+    assert client.delete(
+        f"/api/reading/{other['id']}/sessions/{session['id']}", headers=auth
+    ).status_code == 404
+
+    assert client.delete(
+        f"/api/reading/{item['id']}/notes/{note['id']}", headers=auth
+    ).status_code == 204
+    assert client.delete(
+        f"/api/reading/{item['id']}/sessions/{session['id']}", headers=auth
+    ).status_code == 204
+    assert client.get(f"/api/reading/{item['id']}/notes", headers=auth).json()["items"] == []
+    assert client.get(f"/api/reading/{item['id']}/sessions", headers=auth).json()["items"] == []
+
+
+def test_logs_on_a_missing_book_are_404(client, auth):
+    assert client.get("/api/reading/999/notes", headers=auth).status_code == 404
+    assert client.get("/api/reading/999/sessions", headers=auth).status_code == 404
+    assert client.post(
+        "/api/reading/999/notes", headers=auth, json={"date": "2026-08-09"}
+    ).status_code == 404
+
+
+def test_deleting_a_book_cascades_its_notes_and_sessions(client, auth):
+    item = _book(client, auth)
+    kept = _book(client, auth, title="Kept")
+    _note(client, auth, item["id"])
+    _note(client, auth, kept["id"])
+    _session(client, auth, item["id"])
+
+    assert client.delete(f"/api/reading/{item['id']}", headers=auth).status_code == 204
+    assert len(client.get(f"/api/reading/{kept['id']}/notes", headers=auth).json()["items"]) == 1
+
+    from app.database import SessionLocal
+    from app.models.reading import ReadingNote, ReadingSession
+
+    session = SessionLocal()
+    try:
+        assert session.query(ReadingNote).filter_by(item_id=item["id"]).count() == 0
+        assert session.query(ReadingSession).filter_by(item_id=item["id"]).count() == 0
+    finally:
+        session.close()
+
+
 def test_blank_author_is_stored_as_nothing(client, auth):
     """A form sends ""; the client must not have to render an empty author."""
     assert _book(client, auth, author="   ", category="")["author"] is None
