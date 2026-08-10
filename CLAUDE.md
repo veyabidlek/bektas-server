@@ -169,6 +169,32 @@ Follow this exact pattern (habits is the reference implementation):
 - The whole feature is SQLite-only and degrades to "no results" elsewhere, never
   to a 500.
 
+## The Islam section
+
+- **Everything is admin-only, covers included.** This follows the diary, not the
+  portfolio: a project card is public content, nothing here is. `GET
+  /api/islam/{books,audio}/covers/{id}` carries `require_admin` and
+  `Cache-Control: private`, and loads in an `<img>` only because the HttpOnly
+  `bk_admin` cookie rides along. Do not add a public read to this section.
+- Covers live at `/data/uploads/islam` on the volume, downscaled through
+  `image_optimize.py`. `scripts/backup.sh` tars all of `/data/uploads`, so they
+  are already captured — nothing to add there.
+- A cover is a **filename column** on its row, not a table: one-to-one with the
+  thing it pictures. A replacement gets a fresh random name and the old file is
+  unlinked in the same call — reusing the path leaves a cached browser showing
+  the previous picture.
+- `pages_logged` on a khatm is **computed**, never stored — the summed log
+  ranges, in one grouped query for the whole list. Do not add a counter column;
+  it drifts the first time an entry is deleted.
+- A `prayer_marks` row exists **only where something was marked**. Clearing both
+  status and quality deletes the row, which is what keeps "not filled in yet"
+  distinguishable from "skipped". The range read fills every day in between with
+  `entries: {}` because the client draws a calendar off it.
+- Request bodies accept **camelCase alongside snake_case** (`either_case()` in
+  `app/schemas/islam.py`). The client's `fetchApi` does not snake-case outgoing
+  bodies and `lib/api.ts` sends `khatmId` / `pageFrom` / `targetPages`.
+  Responses stay snake_case like everything else.
+
 ## File size limits
 
 Keep service files under 150 lines. If a service grows beyond that, split by domain.
