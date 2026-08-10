@@ -423,3 +423,49 @@ CREATE TABLE IF NOT EXISTS portfolio_images (
     size_bytes   INTEGER NOT NULL DEFAULT 0,
     created_at   VARCHAR NOT NULL
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 012 — Reading list
+-- Date: 2026-08-10
+--
+-- New table, created by create_all() at startup. No new columns on any existing
+-- table, so ensure_columns() has nothing to do.
+-- -----------------------------------------------------------------------------
+
+-- The public reading list, imported from a Notion database export with
+-- `python -m scripts.import_reading <csv>` (idempotent: a title that already
+-- exists is skipped, compared case-insensitively and stripped).
+--
+-- Reads are PUBLIC — the whole point is a page anyone can look at. Create,
+-- update and delete are admin-only.
+--
+-- Everything but the title is nullable: a Notion table is half-filled by
+-- nature, and a book that has only been *added* carries nothing but its name.
+--
+-- `category` is the export's "Type" select, kept a free string so a new one
+-- costs no migration (Novel / Self-Development / Spiritual / Programming /
+-- Psychology today). `status` is the one closed set:
+--     not_started | in_progress | completed | abandoned
+-- where `abandoned` is the export's "could not finish" — a shelved book stays
+-- part of the reading history rather than being deleted.
+--
+-- `score` is 1..5 stars or NULL, counted from the ⭐ characters in the export.
+-- Dates are ISO 'YYYY-MM-DD'. The export's "Day Count" is NOT stored: it is
+-- completed - started, and a derived number that can disagree with its own
+-- inputs is worse than none. The client computes it.
+CREATE TABLE IF NOT EXISTS reading_items (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title      VARCHAR NOT NULL,
+    author     VARCHAR,
+    category   VARCHAR,
+    status     VARCHAR NOT NULL DEFAULT 'not_started',
+    pages      INTEGER,
+    score      INTEGER,
+    started    VARCHAR,
+    completed  VARCHAR,
+    created_at VARCHAR NOT NULL
+);
+
+-- The list is read newest-finished-first, so the ordering column is indexed.
+CREATE INDEX IF NOT EXISTS ix_reading_items_completed ON reading_items (completed);
