@@ -97,6 +97,15 @@ SOURCES: tuple[Source, ...] = (
         title="''",
         body="coalesce({r}.text, '')",
     ),
+    Source(
+        kind="reading",
+        table="reading_items",
+        ref="id",
+        # A book is "about" when it was finished, else when it was picked up.
+        day="coalesce({r}.completed, {r}.started, {r}.created_at)",
+        title="{r}.title",
+        body="coalesce({r}.author, '') || char(10) || coalesce({r}.category, '')",
+    ),
 )
 
 
