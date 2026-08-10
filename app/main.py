@@ -16,6 +16,7 @@ from app.routers import (
     diary,
     friends,
     inbox,
+    islam_books,
     islam_prayers,
     islam_quran,
     habits,
@@ -61,6 +62,7 @@ app.include_router(inbox.router)
 app.include_router(reading.router)
 app.include_router(islam_quran.router)
 app.include_router(islam_prayers.router)
+app.include_router(islam_books.router)
 app.include_router(search.router)
 app.include_router(assistant.router)
 

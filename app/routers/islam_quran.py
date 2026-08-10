@@ -21,6 +21,7 @@ from app.schemas.islam import (
     SuraNoteListOut,
     SuraNoteOut,
 )
+from app.services import islam_log as log_svc
 from app.services import islam_quran as svc
 from app.services import islam_sura as sura_svc
 
@@ -77,7 +78,7 @@ def list_quran_log(
     _: None = Depends(require_admin),
 ):
     """Newest date first. `?khatm=<id>` narrows it to one khatm."""
-    return QuranLogListOut(items=svc.list_log(db, khatm))
+    return QuranLogListOut(items=log_svc.list_entries(db, khatm))
 
 
 @router.post("/quran-log", response_model=QuranLogEntryOut, status_code=201)
@@ -87,17 +88,17 @@ def add_quran_log_entry(
     """The page range is validated by the schema (1 ≤ from ≤ to ≤ 604); the one
     thing it cannot check is that the khatm exists."""
     _khatm_or_404(db, data.khatm_id)
-    return svc.entry_out(svc.add_log_entry(db, data))
+    return log_svc.out(log_svc.add_entry(db, data))
 
 
 @router.delete("/quran-log/{entry_id}", status_code=204)
 def delete_quran_log_entry(
     entry_id: str, db: Session = Depends(get_db), _: None = Depends(require_admin)
 ):
-    entry = svc.get_log_entry(db, entry_id)
+    entry = log_svc.get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Log entry not found")
-    svc.delete_log_entry(db, entry)
+    log_svc.delete_entry(db, entry)
 
 
 # --- sura notes -----------------------------------------------------------

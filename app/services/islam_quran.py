@@ -1,4 +1,4 @@
-"""Khatms and the Quran reading log.
+"""Khatms. The entries they are counted from live in `islam_log.py`.
 
 `pages_logged` is the only interesting thing here. It is computed, never
 stored, and it is computed for the *whole list* in one grouped query rather
@@ -13,13 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.islam import Khatm, QuranLogEntry
-from app.schemas.islam import (
-    KhatmCreate,
-    KhatmOut,
-    KhatmUpdate,
-    QuranLogCreate,
-    QuranLogEntryOut,
-)
+from app.schemas.islam import KhatmCreate, KhatmOut, KhatmUpdate
 from app.services.calendar import ASTANA
 
 
@@ -111,54 +105,4 @@ def update_khatm(db: Session, khatm: Khatm, data: KhatmUpdate) -> Khatm:
 def delete_khatm(db: Session, khatm: Khatm) -> None:
     """Takes its log with it — an orphaned entry counts towards nothing."""
     db.delete(khatm)
-    db.commit()
-
-
-# --- the log --------------------------------------------------------------
-
-
-def _entry_out(entry: QuranLogEntry) -> QuranLogEntryOut:
-    return QuranLogEntryOut(
-        id=entry.id,
-        khatm_id=entry.khatm_id,
-        date=entry.date,
-        page_from=entry.page_from,
-        page_to=entry.page_to,
-        note=entry.note,
-    )
-
-
-def entry_out(entry: QuranLogEntry) -> QuranLogEntryOut:
-    return _entry_out(entry)
-
-
-def list_log(db: Session, khatm_id: str | None = None) -> list[QuranLogEntryOut]:
-    query = db.query(QuranLogEntry)
-    if khatm_id:
-        query = query.filter(QuranLogEntry.khatm_id == khatm_id)
-    entries = query.order_by(QuranLogEntry.date.desc(), QuranLogEntry.id.desc()).all()
-    return [_entry_out(e) for e in entries]
-
-
-def add_log_entry(db: Session, data: QuranLogCreate) -> QuranLogEntry:
-    entry = QuranLogEntry(
-        id=_new_id(),
-        khatm_id=data.khatm_id,
-        date=data.date,
-        page_from=data.page_from,
-        page_to=data.page_to,
-        note=data.note,
-    )
-    db.add(entry)
-    db.commit()
-    db.refresh(entry)
-    return entry
-
-
-def get_log_entry(db: Session, entry_id: str) -> QuranLogEntry | None:
-    return db.query(QuranLogEntry).filter(QuranLogEntry.id == entry_id).first()
-
-
-def delete_log_entry(db: Session, entry: QuranLogEntry) -> None:
-    db.delete(entry)
     db.commit()
