@@ -23,6 +23,10 @@ def _out(item: ReadingItem) -> ReadingItemOut:
         started=item.started,
         completed=item.completed,
         created_at=item.created_at,
+        description=item.description,
+        # The public serving route, never a path on disk — and None when there
+        # is no cover, so the client can tell "no picture" from "broken one".
+        cover_url=f"/api/reading/covers/{item.id}" if item.cover_image else None,
     )
 
 
@@ -73,6 +77,7 @@ def create_reading_item(db: Session, data: ReadingItemIn) -> ReadingItem:
         score=data.score,
         started=data.started,
         completed=data.completed,
+        description=data.description,
         created_at=_now(),
     )
     db.add(item)
@@ -86,6 +91,11 @@ def update_reading_item(db: Session, item: ReadingItem, data: ReadingItemIn) -> 
 
     PUT replaces, so an omitted optional field clears rather than preserving —
     the client always sends the whole object.
+
+    `cover_image` is the exception, and it is not one: the cover never travels
+    in this body (it is a multipart upload on its own route), so there is
+    nothing here to replace it *with*. Clearing it would mean every edit of a
+    title silently threw the picture away.
     """
     item.title = data.title
     item.author = data.author
@@ -95,6 +105,7 @@ def update_reading_item(db: Session, item: ReadingItem, data: ReadingItemIn) -> 
     item.score = data.score
     item.started = data.started
     item.completed = data.completed
+    item.description = data.description
     db.commit()
     db.refresh(item)
     return item

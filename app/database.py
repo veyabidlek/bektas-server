@@ -52,6 +52,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # completion Bektas has ticked — the DEFAULT is what silently reclassifies
     # all of them as fully done, which is what they were.
     ("habit_completions", "state", "VARCHAR NOT NULL DEFAULT 'done'"),
+    # The public Shelf view, added 2026-08-10 to a table already holding every
+    # book of the Notion import. Both nullable with no default: an imported row
+    # has neither a blurb nor a cover until Bektas gives it one.
+    ("reading_items", "description", "TEXT"),
+    ("reading_items", "cover_image", "VARCHAR"),
 ]
 
 

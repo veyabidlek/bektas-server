@@ -17,6 +17,11 @@ class ReadingItemOut(BaseModel):
     started: str | None = None
     completed: str | None = None
     created_at: str
+    # The Shelf view (2026-08-10). `cover_url` is the public serving route, or
+    # None — never a path on disk, so the client can tell "no picture" from
+    # "broken picture".
+    description: str | None = None
+    cover_url: str | None = None
 
 
 class ReadingListOut(BaseModel):
@@ -31,7 +36,12 @@ class ReadingListOut(BaseModel):
 
 class ReadingItemIn(BaseModel):
     """The body of both POST and PUT — a create and a full update take the
-    same shape, so there is one schema and no drift between them."""
+    same shape, so there is one schema and no drift between them.
+
+    The cover is **not** here: it arrives as multipart on its own route, so a
+    PUT that knows nothing about it must leave `cover_image` alone rather than
+    replace-to-nothing like every other field.
+    """
 
     title: str
     author: str | None = None
@@ -41,6 +51,7 @@ class ReadingItemIn(BaseModel):
     score: int | None = Field(default=None, ge=1, le=5)
     started: str | None = None
     completed: str | None = None
+    description: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -50,7 +61,7 @@ class ReadingItemIn(BaseModel):
             raise ValueError("Title is required")
         return title
 
-    @field_validator("author", "category")
+    @field_validator("author", "category", "description")
     @classmethod
     def _blank_is_nothing(cls, v: str | None) -> str | None:
         """An empty string from a form field means "not set", not "".

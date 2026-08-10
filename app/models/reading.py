@@ -1,5 +1,5 @@
-from sqlalchemy import Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -23,6 +23,11 @@ class ReadingItem(Base):
     The export's "Day Count" column is deliberately **not** stored: it is
     `completed - started`, and a derived number that can disagree with its own
     inputs is worse than no number. The client computes it.
+
+    `description` and `cover_image` arrived with the public Shelf view
+    (2026-08-10). The cover is a **filename** on the volume, the same split the
+    Islam shelf uses — but served publicly, because /reading is a page anyone
+    can look at.
     """
 
     __tablename__ = "reading_items"
@@ -38,6 +43,10 @@ class ReadingItem(Base):
     started: Mapped[str | None] = mapped_column(String, nullable=True)
     completed: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
+    # What the shelf card says under the title. Long-form, so TEXT.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Filename on the volume, not bytes and not a URL. NULL = no cover yet.
+    cover_image: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 # The four states a book can be in. `abandoned` is the export's "could not

@@ -684,3 +684,20 @@ CREATE TABLE IF NOT EXISTS islam_audio_sessions (
 
 CREATE INDEX IF NOT EXISTS ix_islam_audio_sessions_audio_id ON islam_audio_sessions (audio_id);
 CREATE INDEX IF NOT EXISTS ix_islam_audio_sessions_date ON islam_audio_sessions (date);
+
+-- 2026-08-10 — the public Shelf view of the reading list.
+--
+-- A blurb and a cover, both on the row that already exists, so both are
+-- ALTER TABLE and not just a Mapped[...] attribute (create_all() adds tables,
+-- never columns — see _ADDED_COLUMNS in app/database.py).
+--
+-- cover_image is the FILENAME on the Docker volume (/data/uploads/reading) —
+-- not bytes, not a URL. Unlike the Islam shelf, serving it is PUBLIC
+-- (GET /api/reading/covers/{id}, Cache-Control: public): /reading is a page
+-- anyone can look at, which is the portfolio's exception, not the diary's
+-- rule. Upload and delete stay admin-only.
+--
+-- The cover is deliberately NOT part of the PUT body: that body is a full
+-- replace, and a field it does not carry would be cleared on every edit.
+ALTER TABLE reading_items ADD COLUMN description TEXT;
+ALTER TABLE reading_items ADD COLUMN cover_image VARCHAR;

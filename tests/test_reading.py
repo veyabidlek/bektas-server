@@ -108,6 +108,44 @@ def test_optional_fields_default_to_nothing(client, auth):
     assert item["score"] is None
     assert item["pages"] is None
     assert item["started"] is None and item["completed"] is None
+    assert item["description"] is None
+    assert item["cover_url"] is None
+
+
+# --- the shelf: description ------------------------------------------------
+
+
+def test_a_description_round_trips_through_create_list_and_update(client, auth):
+    created = _book(
+        client, auth, title="Shoe Dog", status="completed", description="Nike, from a car boot."
+    )
+    assert created["description"] == "Nike, from a car boot."
+
+    listed = client.get("/api/reading").json()["items"]
+    assert listed[0]["description"] == "Nike, from a car boot."
+
+    edited = client.put(
+        f"/api/reading/{created['id']}",
+        headers=auth,
+        json={"title": "Shoe Dog", "status": "completed", "description": "Rewritten."},
+    )
+    assert edited.json()["description"] == "Rewritten."
+
+
+def test_a_blank_description_is_stored_as_nothing(client, auth):
+    """A textarea sends ""; the card must not render an empty blurb."""
+    assert _book(client, auth, description="   ")["description"] is None
+
+
+def test_a_put_without_a_description_clears_it(client, auth):
+    """PUT is a full replace and the client sends the whole object, so an
+    omitted blurb means "removed", not "unchanged"."""
+    created = _book(client, auth, title="Shoe Dog", description="Nike, from a car boot.")
+
+    cleared = client.put(
+        f"/api/reading/{created['id']}", headers=auth, json={"title": "Shoe Dog"}
+    )
+    assert cleared.json()["description"] is None
 
 
 def test_blank_author_is_stored_as_nothing(client, auth):
