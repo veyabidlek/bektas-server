@@ -15,7 +15,7 @@ would have to invent.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 
 #: How much of the open-task list the snapshot carries. Long enough to answer
@@ -118,7 +118,10 @@ def overdue_summary(tasks: Sequence, today: str) -> str:
 # --- habits ---------------------------------------------------------------
 
 
-def week_done(completed_days: dict[str, bool], days: Sequence[str]) -> int:
+def week_done(completed_days: Mapping[str, object], days: Sequence[str]) -> int:
+    # Truthy, not `is True`: a day's value is `True` or `"partial"`, and a day
+    # he did some of the habit counts toward the week — the same call
+    # review_score.py makes when it scores partial above missed.
     return sum(1 for day in days if completed_days.get(day))
 
 

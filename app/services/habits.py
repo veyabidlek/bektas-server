@@ -3,7 +3,23 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.habit import Habit, HabitCompletion
-from app.schemas.habit import HabitOut, HabitStats, HabitUpdate
+from app.schemas.habit import DayState, HabitOut, HabitStats, HabitUpdate
+
+#: Stored on a completion row. "done" is the historical meaning of "a row exists".
+DONE = "done"
+PARTIAL = "partial"
+#: Asked for over the API only — it is stored as the absence of a row.
+NONE = "none"
+
+
+def day_value(state: str) -> DayState:
+    """What a stored completion looks like in `completed_days`.
+
+    "done" becomes `True`, not the string, because that map was a
+    `{date: true}` before partial existed and clients truthy-check it. Widening
+    the value domain is only safe as long as the old value keeps its old shape.
+    """
+    return True if state == DONE else state  # type: ignore[return-value]
 
 
 def normalize_category(value: str | None) -> str | None:
@@ -101,11 +117,11 @@ def list_habits(
 
     for habit in habits:
         completions = (
-            db.query(HabitCompletion.date)
+            db.query(HabitCompletion.date, HabitCompletion.state)
             .filter(HabitCompletion.habit_id == habit.id)
             .all()
         )
-        completed_days = {c.date: True for c in completions}
+        completed_days = {c.date: day_value(c.state) for c in completions}
         result.append(
             HabitOut(
                 id=habit.id,
@@ -141,6 +157,42 @@ def toggle_habit(db: Session, habit_id: str, target_date: str) -> bool:
     db.add(completion)
     db.commit()
     return True
+
+
+def set_day_state(db: Session, habit_id: str, target_date: str, state: str) -> str:
+    """Put one day into one of the three states. Returns the state now in force.
+
+    Unlike `toggle_habit` this is not a flip — the caller says what it wants, so
+    a swipe that lands on "partial" twice is idempotent instead of undoing
+    itself. `toggle_habit` stays as it was for the old boolean UI; it will
+    happily delete a partial day, which is the honest meaning of un-ticking it.
+
+    "none" deletes the row rather than storing a third value: everything that
+    reads a habit — stats, streaks, the assistant's context — already spells
+    "not done" as "no row", and a stored "none" would have to be filtered out
+    of every one of them.
+    """
+    existing = (
+        db.query(HabitCompletion)
+        .filter(
+            HabitCompletion.habit_id == habit_id,
+            HabitCompletion.date == target_date,
+        )
+        .first()
+    )
+
+    if state == NONE:
+        if existing:
+            db.delete(existing)
+            db.commit()
+        return NONE
+
+    if existing:
+        existing.state = state
+    else:
+        db.add(HabitCompletion(habit_id=habit_id, date=target_date, state=state))
+    db.commit()
+    return state
 
 
 def get_habit_stats(db: Session, habit_id: str, days: int = 30) -> HabitStats:

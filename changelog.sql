@@ -489,3 +489,37 @@ CREATE INDEX IF NOT EXISTS ix_reading_items_completed ON reading_items (complete
 -- NULL on the way in (app/services/habits.py normalize_category) so the list
 -- never grows an empty-string group.
 ALTER TABLE habits ADD COLUMN category VARCHAR;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 014 — A habit day can be *partially* done
+-- Date: 2026-08-10
+--
+-- A new column on a table that already has rows, so create_all() will NOT add
+-- it. Applied automatically at startup by ensure_columns() in app/database.py
+-- (entry: habit_completions/state), which is idempotent. Recorded here for the
+-- history.
+-- -----------------------------------------------------------------------------
+
+-- The swipe tracker needs a third answer: "I did some of it". That is stored on
+-- the completion row rather than as a new table or a new column on habits —
+-- it is a fact about one day, and habit_completions already IS the day.
+--
+-- The domain is exactly two values, 'done' | 'partial'. A missed day is the
+-- ABSENCE of a row, as it always has been; there is no 'none' state on disk.
+-- Storing one would mean teaching every existing read to filter it out, and
+-- those reads (stats, streaks, the assistant's context) all currently spell
+-- "not done" as "no row".
+--
+-- NOT NULL DEFAULT 'done' is the whole backfill: every completion recorded
+-- before today was a full tick, so the default states the truth about them.
+--
+-- Over the API this surfaces in `completed_days` as `true | "partial"` — 'done'
+-- is serialized as the boolean it used to be, so a client that only ever
+-- truthy-checked the map keeps working without knowing partial exists.
+--
+-- Deliberately UNCHANGED: habit stats and streaks count any row, so a partial
+-- day still keeps a streak alive. A day he did something is nearer to done
+-- than to missed, and that is the same call review_score.py already makes
+-- (done=1, partial=½, no=0) rather than treating partial as a failure.
+ALTER TABLE habit_completions ADD COLUMN state VARCHAR NOT NULL DEFAULT 'done';

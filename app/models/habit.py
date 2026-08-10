@@ -35,5 +35,10 @@ class HabitCompletion(Base):
         String, ForeignKey("habits.id"), nullable=False
     )
     date: Mapped[str] = mapped_column(String, nullable=False)
+    # How much of the habit was done that day: "done" or "partial". There is no
+    # third value — a day that was missed has **no row**, which is what every
+    # existing read already assumes. Defaulted to "done" so the old boolean
+    # insert (`toggle_habit`, the seed) keeps meaning exactly what it meant.
+    state: Mapped[str] = mapped_column(String, nullable=False, default="done")
 
     habit: Mapped["Habit"] = relationship(back_populates="completions")

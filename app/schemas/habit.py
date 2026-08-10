@@ -1,4 +1,16 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+#: What one day in `completed_days` may be. `True` — not the string "done" — is
+#: what a fully-done day serializes to, so every client written against the old
+#: boolean map keeps working: it truthy-checks, and "partial" is truthy too.
+#: A missed day is simply absent from the map.
+DayState = Literal[True, "partial"]
+
+#: What the writer may ask for. "none" exists only in the request — it means
+#: "forget this day", and forgetting is stored as the absence of a row.
+MarkState = Literal["done", "partial", "none"]
 
 
 class HabitOut(BaseModel):
@@ -10,7 +22,7 @@ class HabitOut(BaseModel):
     visibility: str = "public"
     #: "education" / "health" / "islam" / … — a free string, None when ungrouped.
     category: str | None = None
-    completed_days: dict[str, bool]
+    completed_days: dict[str, DayState]
 
 
 class HabitUpdate(BaseModel):
@@ -30,6 +42,13 @@ class HabitUpdate(BaseModel):
 class HabitToggleResponse(BaseModel):
     date: str
     completed: bool
+
+
+class HabitMarkResponse(BaseModel):
+    """The state the day is in now — "none" when the day was cleared."""
+
+    date: str
+    state: MarkState
 
 
 class HabitStats(BaseModel):

@@ -48,6 +48,10 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # default: every habit Bektas already tracks stays ungrouped until he says
     # otherwise. Added 2026-08-10 to a table full of rows.
     ("habits", "category", "VARCHAR"),
+    # "done" | "partial". Added 2026-08-10 to a table that already holds every
+    # completion Bektas has ticked — the DEFAULT is what silently reclassifies
+    # all of them as fully done, which is what they were.
+    ("habit_completions", "state", "VARCHAR NOT NULL DEFAULT 'done'"),
 ]
 
 
