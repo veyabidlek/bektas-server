@@ -40,7 +40,11 @@ START = (
     "\n"
     "🗓 <b>Every Sunday</b>\n"
     "Your week — what happened, what it added up to, what's coming.\n"
-    "<code>/digest</code> runs it now."
+    "<code>/digest</code> runs it now.\n"
+    "\n"
+    "🤖 <b>Ask anything</b>\n"
+    "<code>/a what's left today?</code>\n"
+    "Answers from your own calendar, tasks, habits and focus time — honestly."
 )
 
 # --- the command menu + profile text (set once at startup) ----------------
@@ -49,6 +53,7 @@ START = (
 # is deliberately NOT a second menu row — a duplicate entry reads as noise.
 BOT_COMMANDS = [
     {"command": "start", "description": "What this bot does and how to use it"},
+    {"command": "a", "description": "Ask your assistant about today, tasks or habits"},
     {"command": "review", "description": "Review today's events and score the day"},
     {"command": "digest", "description": "This week — what happened and what's next"},
 ]
@@ -70,6 +75,36 @@ BOT_DESCRIPTION = (
 REFUSED = "Sorry — this is a private bot."
 
 UNKNOWN_COMMAND = "I don't know that command. Just send me the thought."
+
+# --- the assistant (/a, /ask) ---------------------------------------------
+# Plain text going out, not a flow: free text in this chat is Inbox capture, so
+# a question has to be asked with the command. Each /a stands on its own —
+# there is deliberately no conversation memory here, the same reasoning that
+# keeps the diary and review flows stateless.
+
+ASSISTANT_USAGE = (
+    "🤖 <b>Ask me about your own day</b>\n"
+    "<code>/a what's left today?</code>\n"
+    "<code>/a am I keeping up with my habits?</code>\n"
+    "\n"
+    "Plain text still goes to your Inbox — questions need the command.\n"
+    "Each question stands alone; I don't remember the last one."
+)
+
+ASSISTANT_UNAVAILABLE = (
+    "🤖 The assistant is off — no model is configured.\n"
+    "Everything else in this bot works as usual."
+)
+
+
+def assistant_reply(text: str) -> str:
+    """The model's answer, plain.
+
+    Every character is escaped: messages go out with parse_mode=HTML and one
+    stray "<" from a completion would break the whole send — the same rule
+    `weekly_summary.tidy` follows for the digest's paragraph.
+    """
+    return html.escape(text.strip(), quote=False)
 
 # --- the persistent reply keyboard (sits above the text box) ---------------
 # Four taps for the four things worth doing on demand. A tap arrives as a plain

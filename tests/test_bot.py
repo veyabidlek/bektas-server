@@ -174,7 +174,7 @@ def test_startup_registers_the_command_menu_and_profile():
     main._register_profile(tg)
 
     # Every user-facing command the bot handles is in the menu…
-    assert [c["command"] for c in tg.commands] == ["start", "review", "digest"]
+    assert [c["command"] for c in tg.commands] == ["start", "a", "review", "digest"]
     # …each with a helpful, non-empty, punctuation-free-ending description.
     for c in tg.commands:
         assert c["description"].strip()

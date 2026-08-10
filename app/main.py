@@ -11,6 +11,7 @@ from app.routers import (
     about,
     admin,
     articles,
+    assistant,
     calendar,
     diary,
     friends,
@@ -57,6 +58,7 @@ app.include_router(tasks.router)
 app.include_router(inbox.router)
 app.include_router(reading.router)
 app.include_router(search.router)
+app.include_router(assistant.router)
 
 
 @app.get("/")

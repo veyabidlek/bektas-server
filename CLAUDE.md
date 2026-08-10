@@ -41,6 +41,11 @@ Follow this exact pattern (habits is the reference implementation):
 
 - Tables are auto-created on startup via `create_tables()` in the lifespan handler
 - `changelog.sql` is the human-readable schema history — **update it whenever you add or alter a table**
+- `create_all()` creates missing **tables**, never missing **columns**. A new column
+  on a table that already exists in production has to be appended to
+  `_ADDED_COLUMNS` in `app/database.py` (idempotent, applied at startup) *and*
+  written into `changelog.sql`. Adding only the `Mapped[...]` attribute ships a
+  model that its own database does not have.
 - Connection: `SUPABASE_DATABASE_URL` takes priority over `DATABASE_URL`
 
 ## Uploads
@@ -99,6 +104,29 @@ Follow this exact pattern (habits is the reference implementation):
   messages are sent with `parse_mode=HTML` and one stray `<` breaks the whole send.
 - Bot copy lives in `app/bot/copy.py` and is **English** — Bektas's personal tools
   are English; the customer-facing products stay Kazakh.
+
+## The personal assistant
+
+- `app/services/assistant.py` reads the app and `assistant_format.py` words it —
+  the same DB/pure split as `weekly.py` / `week_stats.py`. Formatting and
+  arithmetic go in the pure half, where they are tested without a database.
+- `build_context(db)` is the whole snapshot: now, today's and tomorrow's events,
+  open tasks (overdue first, capped), habits with their **last-7-days count**,
+  focus minutes **against the week before**, books in progress, open inbox.
+- The tone is "honest coach", and that only stays honest because the context
+  carries the counts. **Adding a claim the assistant should be able to make means
+  adding the number behind it to `build_context` first** — a model asked to
+  judge adherence from a single day's tick would have to guess.
+- **Optional by construction**, exactly like the digest's paragraph: no
+  `DEEPSEEK_API_KEY`, a timeout, a 500 or an empty completion all return `None`.
+  The endpoint turns that into a **503 that says why**, never a 500.
+- `POST /api/assistant/chat` is `require_admin` — it reads his private
+  everything, so there is no public view of it, not even a degraded one.
+- In Telegram the assistant is `/a` (alias `/ask`) and **only** that: free text
+  in the bot is Inbox capture, which is load-bearing. Each `/a` is standalone —
+  no conversation memory, the same statelessness the diary and review flows keep.
+- The model's answer is **escaped** (`copy.assistant_reply`) before it is sent;
+  messages go out with `parse_mode=HTML` and one stray `<` breaks the send.
 
 ## Universal search
 

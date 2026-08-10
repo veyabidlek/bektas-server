@@ -129,6 +129,17 @@ class TelegramClient:
             log.warning("send failed: %s", exc)
             return None
 
+    def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+        """The "…is typing" cue, for the one flow that has to think first.
+
+        Best-effort and short-timeout: it is a courtesy while the model works,
+        and a failed courtesy must never cost the answer behind it.
+        """
+        try:
+            self._call("sendChatAction", {"chat_id": chat_id, "action": action}, timeout=10)
+        except TelegramError as exc:
+            log.warning("chat action failed: %s", exc)
+
     def send_photo(
         self, chat_id: int, data: bytes, filename: str = "photo.jpg", caption: str | None = None
     ) -> None:

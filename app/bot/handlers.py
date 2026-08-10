@@ -132,8 +132,36 @@ def _handle_command(db: Session, tg: TelegramClient, chat_id: int, text: str) ->
         # The Sunday message, for the week he is currently in. Unlike /review
         # this always answers: a quiet week is still an answer.
         weekly.send_weekly(db, tg, chat_id)
+    elif command in ("/a", "/ask"):
+        _ask_assistant(db, tg, chat_id, text)
     else:
         tg.send_message(chat_id, copy.UNKNOWN_COMMAND, keyboard=copy.MENU_KEYBOARD)
+
+
+def _ask_assistant(db: Session, tg: TelegramClient, chat_id: int, text: str) -> None:
+    """`/a <question>` — the same assistant the website admin talks to.
+
+    A question has to carry the command because plain text in this chat is
+    Inbox capture, which is load-bearing and stays that way. No conversation
+    memory: each /a is answered from the app's current state alone.
+    """
+    from app.services import assistant as assistant_svc
+
+    _, _, question = text.partition(" ")
+    question = question.strip()
+    if not question:
+        tg.send_message(chat_id, copy.ASSISTANT_USAGE, keyboard=copy.MENU_KEYBOARD)
+        return
+
+    # The model takes seconds; the "…is typing" cue says so.
+    tg.send_chat_action(chat_id, "typing")
+
+    reply = assistant_svc.answer(db, question)
+    tg.send_message(
+        chat_id,
+        copy.assistant_reply(reply) if reply else copy.ASSISTANT_UNAVAILABLE,
+        keyboard=copy.MENU_KEYBOARD,
+    )
 
 
 def _handle_menu(db: Session, tg: TelegramClient, chat_id: int, label: str) -> None:

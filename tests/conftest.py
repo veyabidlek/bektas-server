@@ -45,6 +45,7 @@ class FakeTelegram:
         self.short_description: str | None = None
         self.description: str | None = None
         self.photos: list[dict] = []
+        self.actions: list[str] = []
 
     def set_my_commands(self, commands):
         self.commands = commands
@@ -69,6 +70,9 @@ class FakeTelegram:
         self.photos.append(
             {"chat_id": chat_id, "bytes": len(data), "filename": filename, "caption": caption}
         )
+
+    def send_chat_action(self, chat_id, action="typing"):
+        self.actions.append(action)
 
     def answer_callback(self, callback_id, text=""):
         self.answers.append(text)
