@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.reading import ReadingItem
 from app.schemas.reading import ReadingItemIn, ReadingItemOut
+from app.services import reading_covers as covers
 from app.services.calendar import ASTANA
 
 
@@ -112,5 +113,19 @@ def update_reading_item(db: Session, item: ReadingItem, data: ReadingItemIn) -> 
 
 
 def delete_reading_item(db: Session, item: ReadingItem) -> None:
+    """Notes and sessions cascade; the cover file has to be unlinked by hand —
+    the ORM knows nothing about the volume."""
+    covers.delete_cover(item.cover_image)
     db.delete(item)
     db.commit()
+
+
+def set_cover(db: Session, item: ReadingItem, data: bytes, content_type: str) -> ReadingItem:
+    """Replacing a cover takes the old file off the volume in the same breath,
+    otherwise every re-upload leaves a stray behind forever."""
+    filename = covers.save_cover(str(item.id), data, content_type)
+    covers.delete_cover(item.cover_image)
+    item.cover_image = filename
+    db.commit()
+    db.refresh(item)
+    return item

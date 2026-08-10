@@ -6,8 +6,25 @@ column, a BOM), so it is tested as plain functions on plain strings.
 """
 
 import dataclasses
+import io
 
+import pytest
+
+from app.services import reading_covers as covers_svc
 from scripts import import_reading as csv_import
+
+
+@pytest.fixture(autouse=True)
+def _uploads_in_tmp(tmp_path, monkeypatch):
+    """Never write test covers onto the real volume."""
+    monkeypatch.setattr(covers_svc, "UPLOAD_DIR", tmp_path / "reading")
+
+
+def _png_bytes(size=(40, 30), color=(90, 40, 20)) -> bytes:
+    Image = pytest.importorskip("PIL.Image", reason="Pillow not installed")
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _book(client, auth, **fields):
@@ -15,6 +32,14 @@ def _book(client, auth, **fields):
     res = client.post("/api/reading", headers=auth, json=body)
     assert res.status_code == 201, res.text
     return res.json()
+
+
+def _upload_cover(client, auth, item_id, size=(40, 30)):
+    return client.post(
+        f"/api/reading/{item_id}/cover",
+        headers=auth,
+        files={"file": ("cover.png", _png_bytes(size), "image/png")},
+    )
 
 
 # --- the API ---------------------------------------------------------------
@@ -146,6 +171,109 @@ def test_a_put_without_a_description_clears_it(client, auth):
         f"/api/reading/{created['id']}", headers=auth, json={"title": "Shoe Dog"}
     )
     assert cleared.json()["description"] is None
+
+
+# --- covers ----------------------------------------------------------------
+
+
+def test_a_cover_is_public_the_way_a_portfolio_screenshot_is(client, auth):
+    """The one that would hurt if it broke. /reading is a page a logged-out
+    visitor can read, so its covers have to load without a cookie — the
+    portfolio's exception, not the Islam shelf's rule."""
+    item = _book(client, auth, status="completed")
+    assert _upload_cover(client, auth, item["id"]).status_code == 200
+
+    anon = client.__class__(client.app)
+    res = anon.get(f"/api/reading/covers/{item['id']}")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("image/")
+    assert res.headers["cache-control"] == "public, max-age=86400"
+
+
+def test_uploading_a_cover_is_admin_only(client, auth):
+    item = _book(client, auth)
+    anon = client.__class__(client.app)
+    assert anon.post(f"/api/reading/{item['id']}/cover").status_code == 401
+
+
+def test_the_covers_route_is_not_swallowed_by_the_item_routes(client, auth):
+    """`/api/reading/covers/{id}` puts the literal "covers" where an int item
+    id goes. Nothing captures it today, and this is what says so if a
+    `GET /{item_id}` is ever added above it — the shape both routes share is
+    exactly the collision."""
+    item = _book(client, auth, status="completed")
+    _upload_cover(client, auth, item["id"])
+
+    anon = client.__class__(client.app)
+    assert anon.get(f"/api/reading/covers/{item['id']}").status_code == 200
+    # And the ordinary item routes still resolve.
+    assert anon.get("/api/reading").status_code == 200
+    assert client.put(
+        f"/api/reading/{item['id']}", headers=auth, json={"title": "Renamed"}
+    ).status_code == 200
+
+
+def test_a_cover_is_downscaled_and_exposed_as_a_url(client, auth):
+    item = _book(client, auth)
+    res = _upload_cover(client, auth, item["id"], size=(3000, 2000))
+    assert res.status_code == 200
+    assert res.json()["cover_url"] == f"/api/reading/covers/{item['id']}"
+
+    assert len(list(covers_svc.UPLOAD_DIR.iterdir())) == 1
+    stored = next(covers_svc.UPLOAD_DIR.iterdir())
+    Image = pytest.importorskip("PIL.Image", reason="Pillow not installed")
+    assert max(Image.open(stored).size) <= 1600
+
+
+def test_replacing_a_cover_takes_the_old_file_off_the_volume(client, auth):
+    item = _book(client, auth)
+    _upload_cover(client, auth, item["id"])
+    first = next(covers_svc.UPLOAD_DIR.iterdir()).name
+
+    _upload_cover(client, auth, item["id"], size=(60, 60))
+    files = [p.name for p in covers_svc.UPLOAD_DIR.iterdir()]
+    # A fresh name, and exactly one file: reusing the path would leave a cached
+    # browser showing the previous picture.
+    assert len(files) == 1 and files[0] != first
+
+
+def test_a_put_never_touches_the_cover(client, auth):
+    """The cover does not travel in the PUT body, so a full replace has nothing
+    to replace it with — editing a title must not throw the picture away."""
+    item = _book(client, auth, description="blurb")
+    _upload_cover(client, auth, item["id"])
+
+    edited = client.put(f"/api/reading/{item['id']}", headers=auth, json={"title": "Renamed"})
+    assert edited.status_code == 200
+    assert edited.json()["cover_url"] == f"/api/reading/covers/{item['id']}"
+    assert edited.json()["description"] is None  # this one *is* replaced
+    assert len(list(covers_svc.UPLOAD_DIR.iterdir())) == 1
+
+
+def test_a_book_without_a_cover_serves_a_404_not_a_500(client, auth):
+    item = _book(client, auth, status="completed")
+    anon = client.__class__(client.app)
+    assert anon.get(f"/api/reading/covers/{item['id']}").status_code == 404
+    assert anon.get("/api/reading/covers/999").status_code == 404
+
+
+def test_a_non_image_cover_is_rejected(client, auth):
+    item = _book(client, auth)
+    res = client.post(
+        f"/api/reading/{item['id']}/cover",
+        headers=auth,
+        files={"file": ("notes.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+    assert res.status_code == 415
+
+
+def test_deleting_an_item_takes_its_cover_off_the_disk(client, auth):
+    item = _book(client, auth)
+    _upload_cover(client, auth, item["id"])
+    assert len(list(covers_svc.UPLOAD_DIR.iterdir())) == 1
+
+    assert client.delete(f"/api/reading/{item['id']}", headers=auth).status_code == 204
+    assert list(covers_svc.UPLOAD_DIR.iterdir()) == []
 
 
 def test_blank_author_is_stored_as_nothing(client, auth):
