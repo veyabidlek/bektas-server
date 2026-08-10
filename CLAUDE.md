@@ -52,6 +52,13 @@ Follow this exact pattern (habits is the reference implementation):
 - Private media is served through an **auth-checked route**, not a static mount.
   A browser cannot put an Authorization header on an `<img>` — that is what the
   HttpOnly `bk_admin` cookie is for; it rides along automatically.
+- **Portfolio screenshots** (`/data/uploads/portfolio`) are the one exception to
+  the auth-checked rule: a project card is public content, so
+  `GET /api/portfolio/images/{id}` has no auth dependency and is
+  `Cache-Control: public`. Upload and delete stay admin-only. The row is
+  **unbound to a project** on purpose — the add-project form needs a URL before
+  the project exists, so `screenshot_url` only *points at* an image (an external
+  URL still works).
 - `scripts/backup.sh` captures the database *and* `/data/uploads`. Anything new
   stored on the volume has to be added there too.
 
