@@ -1,16 +1,26 @@
-from datetime import date
+import re
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin, viewer_level, visible_levels
 from app.models.habit import Habit
-from app.schemas.habit import HabitOut, HabitStats, HabitToggleResponse, HabitUpdate
+from app.schemas.habit import (
+    HabitMarkResponse,
+    HabitOut,
+    HabitStats,
+    HabitToggleResponse,
+    HabitUpdate,
+    MarkState,
+)
 from app.services import habits as svc
 
 router = APIRouter(prefix="/api/habits", tags=["habits"])
+
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class HabitCreate(BaseModel):
@@ -25,6 +35,34 @@ class HabitCreate(BaseModel):
 
 class VisibilityUpdate(BaseModel):
     visibility: str
+
+
+class HabitMark(BaseModel):
+    """One day, one state.
+
+    `MarkState` being a Literal is what turns a typo'd state into a 422 instead
+    of a silently-stored value nothing knows how to read.
+    """
+
+    date: str
+    state: MarkState
+
+    @field_validator("date")
+    @classmethod
+    def _iso_day(cls, value: str) -> str:
+        # The stored key has to be byte-identical to the one every other read
+        # builds with `date.isoformat()`, so the shape is checked before the
+        # calendar is: `fromisoformat` would take "20260810" (3.11+) and
+        # `strptime` would take "2026-8-10", and either would write a key that
+        # nothing else can find. The regex pins the shape, strptime rejects
+        # 2026-02-31.
+        if not _ISO_DAY.fullmatch(value):
+            raise ValueError("date must be YYYY-MM-DD")
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("date must be a real calendar day")
+        return value
 
 
 @router.get("", response_model=list[HabitOut])
@@ -109,6 +147,24 @@ def toggle_habit(
     d = target_date or date.today().isoformat()
     completed = svc.toggle_habit(db, habit_id, d)
     return HabitToggleResponse(date=d, completed=completed)
+
+
+# The three-state writer the swipe tracker uses. /toggle is left exactly as it
+# was — it is the old boolean UI, and giving it a second meaning would change
+# what every existing caller's tap does.
+@router.post("/{habit_id}/mark", response_model=HabitMarkResponse)
+def mark_habit(
+    habit_id: str,
+    data: HabitMark,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    habit = db.query(Habit).filter(Habit.id == habit_id).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    state = svc.set_day_state(db, habit_id, data.date, data.state)
+    return HabitMarkResponse(date=data.date, state=state)
 
 
 @router.get("/{habit_id}/stats", response_model=HabitStats)
