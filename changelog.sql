@@ -489,3 +489,167 @@ CREATE INDEX IF NOT EXISTS ix_reading_items_completed ON reading_items (complete
 -- NULL on the way in (app/services/habits.py normalize_category) so the list
 -- never grows an empty-string group.
 ALTER TABLE habits ADD COLUMN category VARCHAR;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 014 — Islam section (khatms, prayers, books, audio)
+-- Date: 2026-08-10
+--
+-- Ten new tables, all created by create_all() at startup. No new columns on any
+-- existing table, so ensure_columns() has nothing to do.
+--
+-- EVERYTHING here is admin-only, cover images included. There is no public view
+-- of any of it, not even a degraded one — the diary's rule, not the portfolio's.
+-- -----------------------------------------------------------------------------
+
+-- Several khatms run at once: one of his own plus whatever shared khatm he has
+-- been handed a slice of. `kind` is the one closed set (individual | shared)
+-- and `portion` says which slice, as free text — "juz 5", "pages 81-100",
+-- "Ya-Sin" are all things a group chat will hand him, and an enum would have to
+-- guess the vocabulary.
+--
+-- There is deliberately NO pages_logged column. It is the sum of the log
+-- entries' ranges, computed on read: a stored counter drifts away from the
+-- entries that produced it the first time one is deleted, and a number that
+-- disagrees with its own inputs is worse than no number (the same reasoning
+-- that kept reading_items from storing the export's "Day Count").
+--
+-- completed_at NULL = still running; the list sorts active khatms first.
+CREATE TABLE IF NOT EXISTS quran_khatms (
+    id           VARCHAR PRIMARY KEY,
+    name         VARCHAR NOT NULL,
+    kind         VARCHAR NOT NULL DEFAULT 'individual',
+    portion      VARCHAR,
+    target_pages INTEGER NOT NULL DEFAULT 604,
+    started_at   VARCHAR NOT NULL,
+    completed_at VARCHAR
+);
+
+-- One sitting. The page range is INCLUSIVE at both ends, so a single page is
+-- 41..41 and the pages it accounts for are page_to - page_from + 1. Validated
+-- 1 <= page_from <= page_to <= 604 on the way in.
+CREATE TABLE IF NOT EXISTS quran_log_entries (
+    id        VARCHAR PRIMARY KEY,
+    khatm_id  VARCHAR NOT NULL REFERENCES quran_khatms(id) ON DELETE CASCADE,
+    date      VARCHAR NOT NULL,
+    page_from INTEGER NOT NULL,
+    page_to   INTEGER NOT NULL,
+    note      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_quran_log_entries_khatm_id ON quran_log_entries (khatm_id);
+CREATE INDEX IF NOT EXISTS ix_quran_log_entries_date ON quran_log_entries (date);
+
+-- ONE note per surah — the surah number IS the primary key, exactly like
+-- diary_entries.day. Writing about al-Baqara again edits that note rather than
+-- starting a second one, so the UI needs no create/update decision. 1..114 is
+-- enforced by the route (422 outside it), not by a CHECK, so a fixture can not
+-- be wedged by a database the app cannot migrate.
+CREATE TABLE IF NOT EXISTS sura_notes (
+    surah      INTEGER PRIMARY KEY,
+    body_md    TEXT    NOT NULL DEFAULT '',
+    updated_at VARCHAR NOT NULL
+);
+
+-- One cell of the prayer grid. A row exists ONLY where something was actually
+-- marked: an untouched day is an absence, not seven NULL rows, and clearing
+-- both fields deletes the row again. That is what keeps "not filled in" and
+-- "skipped" distinguishable — a boolean grid could not.
+--
+--   prayer  fajr | dhuhr | asr | maghrib | isha | awwabin | tahajjud
+--   status  in_time | late | skipped | qaza_restored   (qaza_restored is a
+--           missed prayer made up later — the recovery, worth its own value)
+--   quality focus | lazy                (separate from status on purpose: a
+--           prayer can be on time and absent-minded)
+CREATE TABLE IF NOT EXISTS prayer_marks (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    date    VARCHAR NOT NULL,
+    prayer  VARCHAR NOT NULL,
+    status  VARCHAR,
+    quality VARCHAR,
+    CONSTRAINT uq_prayer_date_name UNIQUE (date, prayer)
+);
+
+CREATE INDEX IF NOT EXISTS ix_prayer_marks_date ON prayer_marks (date);
+
+-- Books and audio are separate tables rather than one items table with a type
+-- column: they diverge where it matters (a book note points at a page range, an
+-- audio note at a free-text position; a book session counts pages, an audio
+-- session counts minutes) and a shared table would carry both sets of columns
+-- half-empty forever.
+--
+-- cover_image is the FILENAME on the Docker volume (/data/uploads/islam) — not
+-- bytes, not a URL — the same split the diary's and the portfolio's photos use.
+-- Serving is auth-checked (GET /api/islam/books/covers/{id}); the portfolio's
+-- public-image exception does NOT apply here.
+--
+-- status: reading | finished | shelved, where shelved is "put down, not
+-- abandoned" — kept visible rather than deleted.
+CREATE TABLE IF NOT EXISTS islam_books (
+    id          VARCHAR PRIMARY KEY,
+    title       VARCHAR NOT NULL,
+    author      VARCHAR,
+    description TEXT,
+    cover_image VARCHAR,
+    status      VARCHAR NOT NULL DEFAULT 'reading',
+    total_pages INTEGER,
+    created_at  VARCHAR NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS islam_book_notes (
+    id        VARCHAR PRIMARY KEY,
+    book_id   VARCHAR NOT NULL REFERENCES islam_books(id) ON DELETE CASCADE,
+    date      VARCHAR NOT NULL,
+    page_from INTEGER,
+    page_to   INTEGER,
+    body_md   TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS ix_islam_book_notes_book_id ON islam_book_notes (book_id);
+CREATE INDEX IF NOT EXISTS ix_islam_book_notes_date ON islam_book_notes (date);
+
+CREATE TABLE IF NOT EXISTS islam_book_sessions (
+    id      VARCHAR PRIMARY KEY,
+    book_id VARCHAR NOT NULL REFERENCES islam_books(id) ON DELETE CASCADE,
+    date    VARCHAR NOT NULL,
+    pages   INTEGER NOT NULL DEFAULT 0,
+    minutes INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS ix_islam_book_sessions_book_id ON islam_book_sessions (book_id);
+CREATE INDEX IF NOT EXISTS ix_islam_book_sessions_date ON islam_book_sessions (date);
+
+-- kind: audiobook | playlist — an audiobook has an author reading a text, a
+-- playlist is a set of lectures or recitations. Different enough to filter on,
+-- not different enough to split into two tables.
+CREATE TABLE IF NOT EXISTS islam_audio (
+    id          VARCHAR PRIMARY KEY,
+    title       VARCHAR NOT NULL,
+    creator     VARCHAR,
+    description TEXT,
+    cover_image VARCHAR,
+    kind        VARCHAR NOT NULL DEFAULT 'audiobook',
+    status      VARCHAR NOT NULL DEFAULT 'reading',
+    created_at  VARCHAR NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS islam_audio_notes (
+    id       VARCHAR PRIMARY KEY,
+    audio_id VARCHAR NOT NULL REFERENCES islam_audio(id) ON DELETE CASCADE,
+    date     VARCHAR NOT NULL,
+    position VARCHAR,
+    body_md  TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS ix_islam_audio_notes_audio_id ON islam_audio_notes (audio_id);
+CREATE INDEX IF NOT EXISTS ix_islam_audio_notes_date ON islam_audio_notes (date);
+
+CREATE TABLE IF NOT EXISTS islam_audio_sessions (
+    id       VARCHAR PRIMARY KEY,
+    audio_id VARCHAR NOT NULL REFERENCES islam_audio(id) ON DELETE CASCADE,
+    date     VARCHAR NOT NULL,
+    minutes  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS ix_islam_audio_sessions_audio_id ON islam_audio_sessions (audio_id);
+CREATE INDEX IF NOT EXISTS ix_islam_audio_sessions_date ON islam_audio_sessions (date);

@@ -14,6 +14,15 @@ from app.models.diary import DiaryEntry, DiaryImage
 from app.models.task import Task
 from app.models.inbox import InboxItem, InboxImage
 from app.models.reading import ReadingItem
+from app.models.islam import Khatm, PrayerMark, QuranLogEntry, SuraNote
+from app.models.islam_media import (
+    IslamAudio,
+    IslamAudioNote,
+    IslamAudioSession,
+    IslamBook,
+    IslamBookNote,
+    IslamBookSession,
+)
 
 __all__ = [
     "Article", "Comment", "ArticleImage",
@@ -31,4 +40,7 @@ __all__ = [
     "Task",
     "InboxItem", "InboxImage",
     "ReadingItem",
+    "Khatm", "QuranLogEntry", "SuraNote", "PrayerMark",
+    "IslamBook", "IslamBookNote", "IslamBookSession",
+    "IslamAudio", "IslamAudioNote", "IslamAudioSession",
 ]
