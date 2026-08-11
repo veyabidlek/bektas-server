@@ -15,6 +15,7 @@ from app.routers import (
     calendar,
     diary,
     friends,
+    health,
     inbox,
     islam_audio,
     islam_books,
@@ -67,6 +68,7 @@ app.include_router(islam_books.router)
 app.include_router(islam_audio.router)
 app.include_router(search.router)
 app.include_router(assistant.router)
+app.include_router(health.router)
 
 
 @app.get("/")
