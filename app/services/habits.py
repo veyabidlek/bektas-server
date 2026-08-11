@@ -48,6 +48,7 @@ def create_habit(
     color: str,
     visibility: str = "public",
     category: str | None = None,
+    target_per_day: int | None = None,
 ) -> HabitOut:
     habit = Habit(
         id=habit_id,
@@ -58,6 +59,9 @@ def create_habit(
         visibility=visibility,
         category=normalize_category(category),
         created_at=today_almaty(),
+        # 1 and None both mean "plain habit"; storing the 1 would make two
+        # spellings of the same thing.
+        target_per_day=target_per_day if target_per_day and target_per_day > 1 else None,
     )
     db.add(habit)
     db.commit()
@@ -70,6 +74,7 @@ def create_habit(
         visibility=habit.visibility,
         category=habit.category,
         created_at=habit.created_at,
+        target_per_day=habit.target_per_day,
         completed_days={},
     )
 
@@ -125,11 +130,12 @@ def list_habits(
 
     for habit in habits:
         completions = (
-            db.query(HabitCompletion.date, HabitCompletion.state)
+            db.query(HabitCompletion.date, HabitCompletion.state, HabitCompletion.amount)
             .filter(HabitCompletion.habit_id == habit.id)
             .all()
         )
         completed_days = {c.date: day_value(c.state) for c in completions}
+        amounts = {c.date: c.amount for c in completions if c.amount is not None}
         result.append(
             HabitOut(
                 id=habit.id,
@@ -140,7 +146,9 @@ def list_habits(
                 visibility=habit.visibility,
                 category=habit.category,
                 created_at=habit.created_at,
+                target_per_day=habit.target_per_day,
                 completed_days=completed_days,
+                amounts=amounts,
             )
         )
 
@@ -198,10 +206,49 @@ def set_day_state(db: Session, habit_id: str, target_date: str, state: str) -> s
 
     if existing:
         existing.state = state
+        # A state-only write is a fresh claim about the day; a count left
+        # over from an earlier counted write would now be lying about it.
+        existing.amount = None
     else:
         db.add(HabitCompletion(habit_id=habit_id, date=target_date, state=state))
     db.commit()
     return state
+
+
+def set_day_amount(db: Session, habit: Habit, target_date: str, amount: int) -> tuple[str, int]:
+    """Put a counted habit's day at an exact count. Returns (state, amount).
+
+    The `state` column stays the value every read judges by — stats, streaks,
+    TEZ, the assistant — so it is derived here, once: at or above the daily
+    goal is "done", short of it is "partial", zero deletes the row exactly
+    like `set_day_state("none")` would. `amount` is stored alongside purely
+    so the UI can say "1/2".
+    """
+    target = habit.target_per_day or 1
+    if amount <= 0:
+        set_day_state(db, habit.id, target_date, NONE)
+        return NONE, 0
+
+    state = DONE if amount >= target else PARTIAL
+    existing = (
+        db.query(HabitCompletion)
+        .filter(
+            HabitCompletion.habit_id == habit.id,
+            HabitCompletion.date == target_date,
+        )
+        .first()
+    )
+    if existing:
+        existing.state = state
+        existing.amount = amount
+    else:
+        db.add(
+            HabitCompletion(
+                habit_id=habit.id, date=target_date, state=state, amount=amount
+            )
+        )
+    db.commit()
+    return state, amount
 
 
 def get_habit_stats(db: Session, habit_id: str, days: int = 30) -> HabitStats:

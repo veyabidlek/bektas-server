@@ -179,3 +179,92 @@ def test_a_partial_day_still_counts_toward_stats_and_the_streak(client, auth, ha
     stats = client.get("/api/habits/quran/stats").json()
     assert stats["completed"] == 1
     assert stats["current_streak"] == 1
+
+
+@pytest.fixture()
+def counted(client, auth):
+    """Quran, 2 pages a day — the smallest real counted habit."""
+    res = client.post(
+        "/api/habits",
+        headers=auth,
+        json={
+            "id": "quran2",
+            "name": "Quran",
+            "emoji": "📖",
+            "color": "#0a0",
+            "target_per_day": 2,
+        },
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["target_per_day"] == 2
+    return res.json()
+
+
+def _habit(client, habit_id):
+    return next(h for h in client.get("/api/habits").json() if h["id"] == habit_id)
+
+
+def test_counted_day_is_partial_below_goal_and_done_at_it(client, auth, counted):
+    one = client.post(
+        "/api/habits/quran2/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done", "amount": 1},
+    )
+    assert one.json() == {"date": "2026-08-11", "state": "partial", "amount": 1}
+    h = _habit(client, "quran2")
+    assert h["completed_days"]["2026-08-11"] == "partial"
+    assert h["amounts"]["2026-08-11"] == 1
+
+    two = client.post(
+        "/api/habits/quran2/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done", "amount": 2},
+    )
+    assert two.json() == {"date": "2026-08-11", "state": "done", "amount": 2}
+    assert _habit(client, "quran2")["completed_days"]["2026-08-11"] is True
+
+
+def test_counted_zero_clears_the_day_like_none(client, auth, counted):
+    client.post(
+        "/api/habits/quran2/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done", "amount": 2},
+    )
+    zero = client.post(
+        "/api/habits/quran2/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done", "amount": 0},
+    )
+    assert zero.json() == {"date": "2026-08-11", "state": "none", "amount": 0}
+    h = _habit(client, "quran2")
+    assert "2026-08-11" not in h["completed_days"]
+    assert "2026-08-11" not in h["amounts"]
+
+
+def test_state_only_write_clears_a_stale_count(client, auth, counted):
+    """TEZ swiping 'done' over a counted day is a fresh claim — the old
+    count must not survive to caption it."""
+    client.post(
+        "/api/habits/quran2/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done", "amount": 1},
+    )
+    swipe = client.post(
+        "/api/habits/quran2/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done"},
+    )
+    # No amount in the state-only response — the pre-counted shape, exactly.
+    assert swipe.json() == {"date": "2026-08-11", "state": "done"}
+    h = _habit(client, "quran2")
+    assert h["completed_days"]["2026-08-11"] is True
+    assert "2026-08-11" not in h["amounts"]
+
+
+def test_amount_on_a_plain_habit_uses_goal_one(client, auth, habit):
+    res = client.post(
+        "/api/habits/quran/mark",
+        headers=auth,
+        json={"date": "2026-08-11", "state": "done", "amount": 1},
+    )
+    assert res.json()["state"] == "done"

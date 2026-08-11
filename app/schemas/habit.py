@@ -25,7 +25,13 @@ class HabitOut(BaseModel):
     #: "YYYY-MM-DD" the habit was added; None for habits that predate the
     #: column (the client shows their earliest completion instead).
     created_at: str | None = None
+    #: Daily goal for counted habits (Quran = 2). None/1 = plain tick-off.
+    target_per_day: int | None = None
     completed_days: dict[str, DayState]
+    #: The count behind a counted habit's day, keyed like `completed_days`.
+    #: A separate map, not a reshaped value: `completed_days` is the
+    #: truthy-checked compatibility surface and stays exactly as it was.
+    amounts: dict[str, int] = {}
 
 
 class HabitUpdate(BaseModel):
@@ -48,10 +54,15 @@ class HabitToggleResponse(BaseModel):
 
 
 class HabitMarkResponse(BaseModel):
-    """The state the day is in now — "none" when the day was cleared."""
+    """The state the day is in now — "none" when the day was cleared.
+
+    `amount` appears only on counted writes (the route excludes None), so the
+    old state-only writers keep receiving byte-identical responses.
+    """
 
     date: str
     state: MarkState
+    amount: int | None = None
 
 
 class HabitStats(BaseModel):

@@ -21,6 +21,10 @@ class Habit(Base):
     # predate the column have no recorded birthday — the client falls back to
     # the earliest completion, which is the honest "tracked since" for them.
     created_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Daily goal for counted habits (Quran = 2 pages/day). NULL is the plain
+    # tick-off habit — the only kind that existed before the HabitKit import
+    # (2026-08-11) — and 1 must mean exactly the same thing.
+    target_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     completions: Mapped[list["HabitCompletion"]] = relationship(
         back_populates="habit",
@@ -44,5 +48,9 @@ class HabitCompletion(Base):
     # existing read already assumes. Defaulted to "done" so the old boolean
     # insert (`toggle_habit`, the seed) keeps meaning exactly what it meant.
     state: Mapped[str] = mapped_column(String, nullable=False, default="done")
+    # The count behind a counted habit's day (1 of Quran's 2 pages). NULL on
+    # plain habits and on state-only writes (TEZ, /toggle) — `state` stays the
+    # value every read judges by; `amount` only explains it.
+    amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     habit: Mapped["Habit"] = relationship(back_populates="completions")

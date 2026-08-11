@@ -62,6 +62,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # their earliest completion, and inventing a date here would claim the
     # grid's pre-history was really missed.
     ("habits", "created_at", "VARCHAR"),
+    # Counted habits (HabitKit import, 2026-08-11): a daily goal on the habit,
+    # the day's count on the completion. Both NULL everywhere they don't
+    # apply — a plain habit and a state-only write carry no numbers.
+    ("habits", "target_per_day", "INTEGER"),
+    ("habit_completions", "amount", "INTEGER"),
 ]
 
 

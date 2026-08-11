@@ -2,7 +2,7 @@ import re
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -31,6 +31,8 @@ class HabitCreate(BaseModel):
     visibility: str = "public"
     #: "education" / "health" / "islam" / … Blank is stored as NULL.
     category: str | None = None
+    #: Daily goal for counted habits (Quran = 2). Omitted = plain tick-off.
+    target_per_day: int | None = None
 
 
 class VisibilityUpdate(BaseModel):
@@ -38,14 +40,18 @@ class VisibilityUpdate(BaseModel):
 
 
 class HabitMark(BaseModel):
-    """One day, one state.
+    """One day, one state — or, for counted habits, one count.
 
     `MarkState` being a Literal is what turns a typo'd state into a 422 instead
-    of a silently-stored value nothing knows how to read.
+    of a silently-stored value nothing knows how to read. When `amount` is
+    given it wins: the state is derived from the count against the habit's
+    daily goal, and the field's own value is ignored (the client sends "done"
+    as a placeholder).
     """
 
     date: str
     state: MarkState
+    amount: int | None = Field(default=None, ge=0, le=100_000)
 
     @field_validator("date")
     @classmethod
@@ -86,7 +92,14 @@ def create_habit(
     if existing:
         raise HTTPException(status_code=409, detail="Habit already exists")
     return svc.create_habit(
-        db, data.id, data.name, data.emoji, data.color, data.visibility, data.category
+        db,
+        data.id,
+        data.name,
+        data.emoji,
+        data.color,
+        data.visibility,
+        data.category,
+        data.target_per_day,
     )
 
 
@@ -152,7 +165,13 @@ def toggle_habit(
 # The three-state writer the swipe tracker uses. /toggle is left exactly as it
 # was — it is the old boolean UI, and giving it a second meaning would change
 # what every existing caller's tap does.
-@router.post("/{habit_id}/mark", response_model=HabitMarkResponse)
+@router.post(
+    "/{habit_id}/mark",
+    response_model=HabitMarkResponse,
+    # `amount` is None on every state-only write; excluding it keeps the
+    # response byte-identical to what the swipe tracker has always received.
+    response_model_exclude_none=True,
+)
 def mark_habit(
     habit_id: str,
     data: HabitMark,
@@ -162,6 +181,10 @@ def mark_habit(
     habit = db.query(Habit).filter(Habit.id == habit_id).first()
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
+
+    if data.amount is not None:
+        state, amount = svc.set_day_amount(db, habit, data.date, data.amount)
+        return HabitMarkResponse(date=data.date, state=state, amount=amount)
 
     state = svc.set_day_state(db, habit_id, data.date, data.state)
     return HabitMarkResponse(date=data.date, state=state)

@@ -777,3 +777,10 @@ CREATE TABLE IF NOT EXISTS sleep_nights (
 -- completion as "tracked since". Grid days before this date render as
 -- "didn't exist yet", not as missed.
 ALTER TABLE habits ADD COLUMN created_at VARCHAR;
+
+-- 2026-08-11 (HabitKit import): counted habits. A daily goal on the habit,
+-- the day's count on the completion; state stays the judged value (done at
+-- or above goal, partial below, no row at zero). Both NULL where they don't
+-- apply.
+ALTER TABLE habits ADD COLUMN target_per_day INTEGER;
+ALTER TABLE habit_completions ADD COLUMN amount INTEGER;
