@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,11 @@ def normalize_category(value: str | None) -> str | None:
     return value.strip() or None
 
 
+def today_almaty() -> str:
+    """The date a new habit is born on — his day, not the container's UTC one."""
+    return datetime.now(ZoneInfo("Asia/Almaty")).date().isoformat()
+
+
 def create_habit(
     db: Session,
     habit_id: str,
@@ -51,6 +57,7 @@ def create_habit(
         archived=False,
         visibility=visibility,
         category=normalize_category(category),
+        created_at=today_almaty(),
     )
     db.add(habit)
     db.commit()
@@ -62,6 +69,7 @@ def create_habit(
         archived=False,
         visibility=habit.visibility,
         category=habit.category,
+        created_at=habit.created_at,
         completed_days={},
     )
 
@@ -131,6 +139,7 @@ def list_habits(
                 archived=habit.archived,
                 visibility=habit.visibility,
                 category=habit.category,
+                created_at=habit.created_at,
                 completed_days=completed_days,
             )
         )

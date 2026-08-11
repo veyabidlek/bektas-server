@@ -22,6 +22,9 @@ class HabitOut(BaseModel):
     visibility: str = "public"
     #: "education" / "health" / "islam" / … — a free string, None when ungrouped.
     category: str | None = None
+    #: "YYYY-MM-DD" the habit was added; None for habits that predate the
+    #: column (the client shows their earliest completion instead).
+    created_at: str | None = None
     completed_days: dict[str, DayState]
 
 

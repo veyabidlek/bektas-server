@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -15,6 +16,25 @@ def get_projects(
     level: str = Depends(viewer_level),
 ):
     return svc.list_projects(db, levels=visible_levels(level))
+
+
+class VisibilityUpdate(BaseModel):
+    visibility: str
+
+
+@router.patch("/api/projects/{project_id}/visibility", response_model=ProjectOut)
+def set_project_visibility(
+    project_id: str,
+    data: VisibilityUpdate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    if data.visibility not in ("public", "friends", "private"):
+        raise HTTPException(status_code=422, detail="Invalid visibility")
+    project = svc.set_project_visibility(db, project_id, data.visibility)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
 
 
 @router.get("/api/sessions", response_model=list[SessionOut])

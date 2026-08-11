@@ -17,6 +17,10 @@ class Habit(Base):
     # string, like `reading_items.category` and `tasks.source`: a new grouping
     # must cost no migration. NULL means ungrouped, which is the normal state.
     category: Mapped[str | None] = mapped_column(String, nullable=True)
+    # "YYYY-MM-DD" (Almaty) the habit was added. Nullable because rows that
+    # predate the column have no recorded birthday — the client falls back to
+    # the earliest completion, which is the honest "tracked since" for them.
+    created_at: Mapped[str | None] = mapped_column(String, nullable=True)
 
     completions: Mapped[list["HabitCompletion"]] = relationship(
         back_populates="habit",

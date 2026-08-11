@@ -771,3 +771,9 @@ CREATE TABLE IF NOT EXISTS sleep_nights (
     created_at     VARCHAR NOT NULL,
     updated_at     VARCHAR NOT NULL
 );
+
+-- 2026-08-11: when a habit was added ("YYYY-MM-DD", Almaty). Nullable — rows
+-- that predate the column keep NULL and the client shows their earliest
+-- completion as "tracked since". Grid days before this date render as
+-- "didn't exist yet", not as missed.
+ALTER TABLE habits ADD COLUMN created_at VARCHAR;

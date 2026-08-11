@@ -21,6 +21,16 @@ def _visible_project_ids(db: Session, levels: list[str] | None) -> list[str] | N
     return [p.id for p in db.query(Project.id).filter(Project.visibility.in_(levels)).all()]
 
 
+def set_project_visibility(db: Session, project_id: str, visibility: str) -> Project | None:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        return None
+    project.visibility = visibility
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 def list_sessions(
     db: Session,
     project_id: str | None = None,

@@ -7,6 +7,7 @@ class ProjectOut(BaseModel):
     id: str
     name: str
     color: str
+    visibility: str = "public"
 
 
 class SessionCreate(BaseModel):

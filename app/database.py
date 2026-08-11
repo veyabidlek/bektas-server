@@ -57,6 +57,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # has neither a blurb nor a cover until Bektas gives it one.
     ("reading_items", "description", "TEXT"),
     ("reading_items", "cover_image", "VARCHAR"),
+    # When the habit was added ("YYYY-MM-DD", Almaty). Added 2026-08-11 to a
+    # table full of rows; NULL for them on purpose — their "tracked since" is
+    # their earliest completion, and inventing a date here would claim the
+    # grid's pre-history was really missed.
+    ("habits", "created_at", "VARCHAR"),
 ]
 
 
