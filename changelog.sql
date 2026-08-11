@@ -731,3 +731,43 @@ CREATE TABLE IF NOT EXISTS reading_sessions (
 
 CREATE INDEX IF NOT EXISTS ix_reading_sessions_item_id ON reading_sessions (item_id);
 CREATE INDEX IF NOT EXISTS ix_reading_sessions_date ON reading_sessions (date);
+
+-- 2026-08-11 — sleep tracking.
+--
+-- The pipeline is Huawei Band 7 → Huawei Health (iOS) → Apple Health → an
+-- Apple Shortcuts automation that POSTs the night's samples every morning to
+-- POST /api/health/sleep. That POST authenticates with the static
+-- HEALTH_INGEST_TOKEN bearer, NOT the admin key file — an unattended iOS
+-- automation cannot post a multipart key file, and should not hold a
+-- credential that opens the rest of the site. Reading the nights back
+-- (GET /api/health/sleep) is admin-only: how he sleeps is as private as the
+-- diary.
+--
+-- The date is the PRIMARY KEY, the same call diary_entries makes: the shortcut
+-- may run twice on a bad morning, and the second run has to REPLACE the night
+-- rather than grow a second row. The date is the LOCAL (Almaty) date of the
+-- last sample's end — a night belongs to the morning you woke up, so
+-- 23:00 → 07:00 is filed under the 07:00 day.
+--
+-- A NULL on a stage column means the band never reported that stage, NOT that
+-- it measured zero. Only asleep_minutes is always a number. Minutes are the
+-- UNION of their segments, never the sum: Apple Health routinely holds two
+-- sources describing the same minutes, and adding them up invents sleep.
+--
+-- `segments` keeps the raw sample list (start/end/stage/raw_stage) as JSON.
+-- Staging is the part of this pipeline most likely to be re-thought, and a
+-- re-analysis is only possible if the minutes behind the aggregates were kept.
+CREATE TABLE IF NOT EXISTS sleep_nights (
+    date           VARCHAR PRIMARY KEY,
+    in_bed_minutes INTEGER,
+    asleep_minutes INTEGER NOT NULL DEFAULT 0,
+    deep_minutes   INTEGER,
+    rem_minutes    INTEGER,
+    core_minutes   INTEGER,
+    awake_minutes  INTEGER,
+    bedtime        VARCHAR,
+    wake_time      VARCHAR,
+    segments       JSON    NOT NULL,
+    created_at     VARCHAR NOT NULL,
+    updated_at     VARCHAR NOT NULL
+);
