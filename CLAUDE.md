@@ -29,6 +29,10 @@ Follow this exact pattern (habits is the reference implementation):
   `bk_admin` cookie. `require_admin` / `viewer_level` accept either, so the session
   survives a cleared `localStorage` and a container restart.
 - Public routes need no auth dependency
+- One machine credential exists: `HEALTH_INGEST_TOKEN` (`require_ingest_token`),
+  and it is scoped to `POST /api/health/sleep`. See "Sleep" for why it is not
+  the admin key. Do not reuse it for a second endpoint — the moment it opens
+  two things it is a second admin key.
 
 ## API conventions
 
@@ -140,6 +144,12 @@ Follow this exact pattern (habits is the reference implementation):
   carries the counts. **Adding a claim the assistant should be able to make means
   adding the number behind it to `build_context` first** — a model asked to
   judge adherence from a single day's tick would have to guess.
+- The SLEEP section is the same bargain: the latest night, the average over the
+  last 7 **recorded** nights, and a shortfall line only when that average is
+  under 7h. Nights the band missed are not counted as zero — a charger left
+  plugged in over the weekend must not read as an accusation. With no data at
+  all the section still prints, saying "no sleep data yet"; a blank is what a
+  model fills in by guessing.
 - **Optional by construction**, exactly like the digest's paragraph: no
   `DEEPSEEK_API_KEY`, a timeout, a 500 or an empty completion all return `None`.
   The endpoint turns that into a **503 that says why**, never a 500.
@@ -216,6 +226,52 @@ Follow this exact pattern (habits is the reference implementation):
   answer 422 on a page that has no login to explain it.
 - The only backlog rule is unchanged: `not_started` is hidden from non-admins
   in the list. It does not extend to covers, which are public by id.
+
+## Sleep
+
+- The pipeline is **Huawei Band 7 → Huawei Health (iOS) → Apple Health → an
+  Apple Shortcuts automation** that POSTs the night's samples every morning.
+  There is no API in that chain that this server could pull from; the phone
+  pushes, and everything below follows from the pusher being a recipe built by
+  tapping boxes on a screen.
+- Auth is a **static bearer token, `HEALTH_INGEST_TOKEN`**, compared with
+  `secrets.compare_digest`. Not the admin key, in both directions: an iOS
+  Shortcut cannot post a multipart key file, and a background automation should
+  not hold the credential that opens his diary. A long random string in a
+  personal shortcut is the right trade for one write-only endpoint — it is not
+  a precedent for a second one. Unset ⇒ **503 naming the variable** (the
+  endpoint was never switched on, nothing is broken); mismatch ⇒ 401. Reading
+  the nights back is `require_admin`: how he sleeps is as private as the diary.
+- **Be liberal about the body.** The shortcut has no console, so a rejection is
+  a morning silently lost. Timestamps take ISO 8601 with an offset (preferred),
+  ISO without one, and `"YYYY-MM-DD HH:MM:SS"` — anything without an offset is
+  **Almaty**, the same call `calendar.normalize_dt` makes. Field names take
+  `start`/`startDate`, `end`/`endDate`, `stage`/`value`. Stages are matched
+  case- and space-insensitively (`In Bed` = `InBed` = `in_bed`), including the
+  raw `HKCategoryValueSleepAnalysis*` enum names. Only an **unparseable
+  timestamp** is fatal, and its 422 names the offending value.
+- An **unknown stage counts as asleep** and is echoed back in
+  `unrecognized_stages`. Under-counting a night is the worse error, and the
+  echo is the only way the recipe ever gets debugged. Do not make it fatal.
+- The night's `date` is the **local date of the latest segment end** — a night
+  belongs to the morning you woke up, so 23:00 → 07:00 is filed under the 07:00
+  day. It is the **primary key** (`diary_entries`' call, not an `id`): the
+  shortcut may run twice, and the second run has to replace the night.
+- Minutes are the **union of the segments, never the sum** — Apple Health
+  routinely holds two sources describing the same minutes, and adding them up
+  invents sleep. Merging happens per stage as well as across sleep as a whole.
+  Segments longer than 24h are dropped as garbage.
+- A stage column is **`None` when it was never reported**, not `0`. "The band
+  does not measure REM" and "he got no REM" are different facts and only one is
+  worth telling him about. `asleep_minutes` is the exception and is always a
+  number.
+- `sleep_nights.segments` keeps the **raw sample list**. Staging is the part of
+  this pipeline most likely to be re-thought, and a re-analysis is only possible
+  if the minutes behind the aggregates were kept. Do not drop it to save space.
+- All of the arithmetic is the pure `app/services/sleep_night.py`; the DB half
+  is `sleep.py`. Same split as `assistant.py` / `assistant_format.py` — a new
+  rule about what counts as sleep goes in the pure module, where it is tested
+  without a database.
 
 ## File size limits
 
