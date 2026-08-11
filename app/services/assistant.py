@@ -30,6 +30,7 @@ from app.services import llm
 from app.services import pomodoro as pomodoro_svc
 from app.services import reading as reading_svc
 from app.services import review as review_svc
+from app.services import sleep as sleep_svc
 from app.services import tasks as tasks_svc
 from app.services.calendar import ASTANA
 
@@ -69,6 +70,7 @@ def build_context(db: Session, now: datetime | None = None) -> str:
         _tasks(db, today),
         _habits(db, today),
         _focus(db, today),
+        _sleep(db),
         _reading(db),
         _inbox(db),
     ]
@@ -121,6 +123,33 @@ def _focus(db: Session, today: str) -> str:
     this_week = fmt.sum_days(daily, fortnight[fmt.WEEK_DAYS :])
     last_week = fmt.sum_days(daily, fortnight[: fmt.WEEK_DAYS])
     return fmt.section("FOCUS TIME (pomodoro)", [fmt.focus_line(this_week, last_week)])
+
+
+def _sleep(db: Session) -> str:
+    """The band's week: the latest night, and the average behind it.
+
+    Both numbers, not just the latest one — the same reasoning as the habits
+    section. One night says nothing about whether he is sleeping; seven do, and
+    the shortfall line is what lets the assistant raise it without being asked.
+    An empty section says **"no sleep data yet"** in so many words: a model
+    handed a blank would guess, and a guess about how he slept is the exact
+    failure this whole context exists to prevent.
+    """
+    nights = sleep_svc.list_nights(db, fmt.WEEK_DAYS)
+    if not nights:
+        return fmt.section("SLEEP", [], empty="no sleep data yet")
+
+    latest = nights[0]
+    asleep = [n.asleep_minutes for n in nights]
+    lines = [
+        "Latest night — "
+        + fmt.sleep_line(latest.date, latest.asleep_minutes, latest.deep_minutes,
+                         latest.bedtime, latest.wake_time),
+        fmt.sleep_average_line(asleep),
+    ]
+    if shortfall := fmt.sleep_shortfall(asleep):
+        lines.append(shortfall)
+    return fmt.section(f"SLEEP (last {fmt.WEEK_DAYS} recorded nights)", lines)
 
 
 def _reading(db: Session) -> str:

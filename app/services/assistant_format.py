@@ -173,3 +173,81 @@ def focus_line(this_week: int, last_week: int) -> str:
 
 def sum_days(daily: dict[str, int], days: Sequence[str]) -> int:
     return sum(daily.get(day, 0) for day in days)
+
+
+# --- sleep ----------------------------------------------------------------
+# The band's numbers, worded. Same rule as the rest of this file: the model is
+# handed the counts, never asked to infer them — "he is tired" is not something
+# that can be read off a single night's total.
+
+#: What a night is supposed to be. A week averaging under this is worth saying
+#: out loud, unprompted; a single short night is not.
+SLEEP_TARGET_MINUTES = 7 * 60
+
+
+def hours_minutes(total: int) -> str:
+    """"6h 40m" / "1h 05m" / "45m".
+
+    Zero-padded, unlike `minutes()` above, which is left exactly as it is — the
+    focus-time lines it writes are asserted character for character. Padding
+    matters here because these numbers are read as clock durations beside one
+    another, and "1h 5m" under "6h 40m" scans as five minutes of something.
+    """
+    if total < 60:
+        return f"{total}m"
+    hours, rest = divmod(total, 60)
+    return f"{hours}h {rest:02d}m"
+
+
+def sleep_line(
+    date: str,
+    asleep_minutes: int,
+    deep_minutes: int | None,
+    bedtime: str | None,
+    wake_time: str | None,
+) -> str:
+    """"2026-08-11: 6h 40m asleep · 1h 05m deep · bed 00:12 → up 07:31".
+
+    A `None` stage is **omitted**, never printed as zero: the band not
+    reporting deep sleep and a night with no deep sleep are different facts,
+    and only one of them is something to be told about.
+    """
+    parts = [f"{hours_minutes(asleep_minutes)} asleep"]
+    if deep_minutes is not None:
+        parts.append(f"{hours_minutes(deep_minutes)} deep")
+    if bedtime and wake_time:
+        parts.append(f"bed {hhmm(bedtime)} → up {hhmm(wake_time)}")
+    return f"{date}: " + " · ".join(parts)
+
+
+def sleep_average(minutes_per_night: Sequence[int]) -> int | None:
+    """The mean over the nights that were *recorded*, or None for none.
+
+    Nights the band missed are not counted as zero-sleep nights — that would
+    turn a charger left plugged in over the weekend into an accusation.
+    """
+    if not minutes_per_night:
+        return None
+    return round(sum(minutes_per_night) / len(minutes_per_night))
+
+
+def sleep_average_line(minutes_per_night: Sequence[int]) -> str:
+    average = sleep_average(minutes_per_night)
+    if average is None:
+        return "no nights recorded"
+    return f"{len(minutes_per_night)} night(s) recorded, averaging {hours_minutes(average)} asleep"
+
+
+def sleep_shortfall(minutes_per_night: Sequence[int]) -> str | None:
+    """The line that lets the assistant raise sleep on its own, or None.
+
+    Only the average crosses the threshold, never one night — a single 4-hour
+    night has a reason, a fortnight of them is a pattern.
+    """
+    average = sleep_average(minutes_per_night)
+    if average is None or average >= SLEEP_TARGET_MINUTES:
+        return None
+    return (
+        f"BELOW TARGET: averaging {hours_minutes(average)} over the last "
+        f"{len(minutes_per_night)} nights, against a {hours_minutes(SLEEP_TARGET_MINUTES)} target"
+    )
