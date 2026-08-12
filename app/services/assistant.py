@@ -31,6 +31,7 @@ from app.services import pomodoro as pomodoro_svc
 from app.services import reading as reading_svc
 from app.services import review as review_svc
 from app.services import sleep as sleep_svc
+from app.services import goals as goals_svc
 from app.services import tasks as tasks_svc
 from app.services.calendar import ASTANA
 
@@ -68,6 +69,7 @@ def build_context(db: Session, now: datetime | None = None) -> str:
         _events(db, "TODAY'S EVENTS", today),
         _events(db, "TOMORROW'S EVENTS", tomorrow),
         _tasks(db, today),
+        _goals(db, today),
         _habits(db, today),
         _focus(db, today),
         _sleep(db),
@@ -94,6 +96,19 @@ def _tasks(db: Session, today: str) -> str:
         empty="nothing open",
     )
     return f"{block}\n- Overdue: {fmt.overdue_summary(open_tasks, today)}"
+
+
+def _goals(db: Session, today: str) -> str:
+    """His roadmaps and how far through each one he is.
+
+    Here for the same reason every other section is: a claim the assistant
+    should be able to make needs the number behind it in the context first.
+    Without this it can see individual tasks but has no idea they ladder up to
+    "Backend engineering", so it cannot say what is stalling.
+    """
+    goals = goals_svc.list_goals(db)
+    lines = [fmt.goal_line(g.title, g.done_count, g.task_count, g.next_due_at, today) for g in goals]
+    return fmt.section(f"ACTIVE GOALS ({len(goals)})", lines, empty="no roadmaps yet")
 
 
 def _habits(db: Session, today: str) -> str:

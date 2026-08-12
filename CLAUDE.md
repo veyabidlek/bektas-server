@@ -94,6 +94,36 @@ Follow this exact pattern (habits is the reference implementation):
   strict enough alone: a key that is not what `date.isoformat()` produces is a
   row no other read can find.
 
+## Goals (roadmaps)
+
+- A **tree**, not a graph: `goal_nodes.parent_id` and nothing else. That is
+  what lets the layout be **derived at render** — there is no x/y in the
+  database, so adding a node can never leave a stored drawing stale, and there
+  is nothing to drag on a phone.
+- **Progress is never stored.** A node's counter is its own tasks; a goal's
+  percentage is its done tasks over its total, computed on read. The number the
+  page draws and the number `build_context` hands the assistant are therefore
+  the same arithmetic on the same rows, and cannot drift apart.
+- `goal_tasks.due_at` carries the **same two shapes** as `tasks.due_at` — a
+  plain "YYYY-MM-DD" or a full Almaty datetime — through the same
+  `normalize_dt`. Keep it that way or the two features stop sharing a day.
+- Deleting a node walks its subtree **explicitly** rather than leaning on a
+  database cascade: SQLite does not enforce foreign keys by default, and an
+  orphan is not an error anyone sees — `nest()` quietly draws it as a second
+  root.
+- Re-parenting refuses a move that would make a node its own ancestor. Without
+  that check the subtree vanishes from every read at once.
+- **The model drafts, it never writes.** `POST /ai/draft` and
+  `POST /nodes/{id}/ai/tasks` return proposals for him to confirm; nothing is
+  saved by a completion. Both degrade like the assistant does — no key, a
+  timeout or unparseable JSON is a **503 that says why**, never a 500 and never
+  a half-built goal. The parsers in `goals_ai.py` are pure, so the failure
+  modes that actually happen (a code fence, a bare list, a node with no title)
+  are tested without a network.
+- `assistant.build_context` grows an ACTIVE GOALS section. That is the usual
+  bargain: a claim the assistant should be able to make needs the number behind
+  it in the context first.
+
 ## Telegram bot
 
 - Runs as the **`bot` compose service** — same image, `python -m app.bot`, long

@@ -251,3 +251,22 @@ def sleep_shortfall(minutes_per_night: Sequence[int]) -> str | None:
         f"BELOW TARGET: averaging {hours_minutes(average)} over the last "
         f"{len(minutes_per_night)} nights, against a {hours_minutes(SLEEP_TARGET_MINUTES)} target"
     )
+
+
+def goal_line(title: str, done: int, total: int, next_due: str | None, today: str) -> str:
+    """One roadmap, with the number behind every claim it allows.
+
+    Percent AND the raw counts: "60%" alone hides whether that is 3 of 5 or
+    300 of 500, and the model would have to guess how much is left. A goal
+    with no tasks yet says so rather than reading as 0% neglected — an empty
+    plan is a plan not written, not a plan abandoned.
+    """
+    if total == 0:
+        shape = "no tasks yet"
+    else:
+        shape = f"{round(done * 100 / total)}% ({done}/{total} tasks)"
+    if not next_due:
+        return f"{title} — {shape}, no deadline set"
+    overdue = next_due[:10] < today
+    when = "OVERDUE" if overdue else "next due"
+    return f"{title} — {shape}, {when} {next_due[:10]}"

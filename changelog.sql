@@ -784,3 +784,53 @@ ALTER TABLE habits ADD COLUMN created_at VARCHAR;
 -- apply.
 ALTER TABLE habits ADD COLUMN target_per_day INTEGER;
 ALTER TABLE habit_completions ADD COLUMN amount INTEGER;
+
+-- 2026-08-12: Goals — neetcode-style roadmaps. Three new tables, so
+-- create_all() makes them and no _ADDED_COLUMNS entry is needed.
+--
+-- No x/y anywhere on purpose: the tree's layout is derived at render, so
+-- adding a node can never leave a stored drawing stale. Progress is likewise
+-- never stored — a goal's percentage is its done tasks over its total, so the
+-- number the page shows and the number the assistant reads cannot disagree.
+CREATE TABLE goals (
+    id          VARCHAR PRIMARY KEY,
+    title       VARCHAR NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    archived    BOOLEAN NOT NULL DEFAULT 0,
+    created_at  VARCHAR NOT NULL,
+    updated_at  VARCHAR NOT NULL
+);
+
+-- parent_id NULL = a root. A goal may have several, which is what makes the
+-- picture a fan of areas rather than one trunk. `position` is sparse (steps of
+-- 10) so an insert between two siblings takes the gap instead of renumbering.
+CREATE TABLE goal_nodes (
+    id          VARCHAR PRIMARY KEY,
+    goal_id     VARCHAR NOT NULL REFERENCES goals(id),
+    parent_id   VARCHAR REFERENCES goal_nodes(id),
+    title       VARCHAR NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  VARCHAR NOT NULL,
+    updated_at  VARCHAR NOT NULL
+);
+CREATE INDEX ix_goal_nodes_goal_id ON goal_nodes(goal_id);
+CREATE INDEX ix_goal_nodes_parent_id ON goal_nodes(parent_id);
+
+-- due_at carries the same two shapes as tasks.due_at — "YYYY-MM-DD" or a full
+-- ISO datetime with the Almaty offset — so goal deadlines can join the
+-- calendar's day column later without translating between formats.
+CREATE TABLE goal_tasks (
+    id          VARCHAR PRIMARY KEY,
+    node_id     VARCHAR NOT NULL REFERENCES goal_nodes(id),
+    title       VARCHAR NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    done        BOOLEAN NOT NULL DEFAULT 0,
+    done_at     VARCHAR,
+    due_at      VARCHAR,
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  VARCHAR NOT NULL,
+    updated_at  VARCHAR NOT NULL
+);
+CREATE INDEX ix_goal_tasks_node_id ON goal_tasks(node_id);
+CREATE INDEX ix_goal_tasks_due_at ON goal_tasks(due_at);

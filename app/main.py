@@ -21,6 +21,7 @@ from app.routers import (
     islam_books,
     islam_prayers,
     islam_quran,
+    goals,
     habits,
     pomodoro,
     portfolio,
@@ -51,6 +52,7 @@ app.add_middleware(
 )
 
 app.include_router(articles.router)
+app.include_router(goals.router)
 app.include_router(habits.router)
 app.include_router(pomodoro.router)
 app.include_router(about.router)
