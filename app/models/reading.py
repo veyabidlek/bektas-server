@@ -47,6 +47,10 @@ class ReadingItem(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Filename on the volume, not bytes and not a URL. NULL = no cover yet.
     cover_image: Mapped[str | None] = mapped_column(String, nullable=True)
+    # "public" / "friends" / "private", same vocabulary as articles and habits.
+    # Defaults to private: the shelf was public until 2026-08-17 and is not any
+    # more, so a new book is closed unless it is deliberately opened.
+    visibility: Mapped[str] = mapped_column(String, nullable=False, default="private")
 
     notes: Mapped[list["ReadingNote"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"

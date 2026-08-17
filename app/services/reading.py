@@ -25,6 +25,7 @@ def _out(item: ReadingItem) -> ReadingItemOut:
         completed=item.completed,
         created_at=item.created_at,
         description=item.description,
+        visibility=item.visibility,
         # The public serving route, never a path on disk — and None when there
         # is no cover, so the client can tell "no picture" from "broken one".
         cover_url=f"/api/reading/covers/{item.id}" if item.cover_image else None,
@@ -36,7 +37,9 @@ def out(item: ReadingItem) -> ReadingItemOut:
 
 
 def list_reading_items(
-    db: Session, include_not_started: bool = True
+    db: Session,
+    include_not_started: bool = True,
+    levels: list[str] | None = None,
 ) -> list[ReadingItemOut]:
     """Most recently finished first, unfinished books after them.
 
@@ -50,6 +53,11 @@ def list_reading_items(
     that have actually been touched.
     """
     query = db.query(ReadingItem)
+    # `levels` is the set of visibility values this viewer may read. None means
+    # "no filter" and is only ever passed by internal callers (the digest, the
+    # search indexer) that already run as the owner.
+    if levels is not None:
+        query = query.filter(ReadingItem.visibility.in_(levels))
     if not include_not_started:
         query = query.filter(ReadingItem.status != "not_started")
     items = (
@@ -79,6 +87,7 @@ def create_reading_item(db: Session, data: ReadingItemIn) -> ReadingItem:
         started=data.started,
         completed=data.completed,
         description=data.description,
+        visibility=data.visibility,
         created_at=_now(),
     )
     db.add(item)
@@ -102,6 +111,7 @@ def update_reading_item(db: Session, item: ReadingItem, data: ReadingItemIn) -> 
     item.author = data.author
     item.category = data.category
     item.status = data.status
+    item.visibility = data.visibility
     item.pages = data.pages
     item.score = data.score
     item.started = data.started

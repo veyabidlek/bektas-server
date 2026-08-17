@@ -33,6 +33,11 @@ def get_db() -> Generator[Session, None, None]:
 # creates missing *tables*, never missing columns, so new columns on old tables
 # have to be added explicitly. Each entry is idempotent — checked before it runs.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # Reading defaults to **private**, unlike every other table here. Bektas
+    # asked for the shelf to stop being public (2026-08-17), and a default of
+    # 'public' would have left every existing book readable until each was
+    # edited by hand — the migration itself has to close it.
+    ("reading_items", "visibility", "VARCHAR NOT NULL DEFAULT 'private'"),
     ("habits", "visibility", "VARCHAR NOT NULL DEFAULT 'public'"),
     ("articles", "visibility", "VARCHAR NOT NULL DEFAULT 'public'"),
     ("articles", "body_md", "TEXT NOT NULL DEFAULT ''"),

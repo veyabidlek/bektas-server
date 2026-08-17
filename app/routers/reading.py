@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_admin, viewer_level
+from app.dependencies import require_admin, viewer_level, visible_levels
 from app.schemas.reading import (
     ReadingItemIn,
     ReadingItemOut,
@@ -20,10 +20,11 @@ from app.services import reading_covers as covers
 from app.services import reading_logs as logs_svc
 from app.services.image_optimize import ALLOWED_CONTENT_TYPES
 
-# Reads are public — the reading list is a page anyone can look at, covers
-# included: that is the portfolio's exception, not the diary's rule. The one
-# gate: the not-started backlog is the owner's business and shows only to the
-# admin ("only in admin", 2026-08-10). Writes are admin-only.
+# The shelf was public until 2026-08-17, when Bektas asked for it to be
+# private. Reads now go through the same `visibility` gate as articles and
+# habits — and so do the covers, because a private list whose cover images are
+# still fetchable by id is not private. The not-started backlog stays
+# admin-only on top of that. Writes are admin-only, as before.
 router = APIRouter(prefix="/api/reading", tags=["reading"])
 
 
@@ -38,7 +39,11 @@ def _item_or_404(db: Session, item_id: int):
 def list_reading(db: Session = Depends(get_db), level: str = Depends(viewer_level)):
     """Public, but the not-started backlog is admin-only."""
     return ReadingListOut(
-        items=svc.list_reading_items(db, include_not_started=level == "admin")
+        items=svc.list_reading_items(
+            db,
+            include_not_started=level == "admin",
+            levels=visible_levels(level),
+        )
     )
 
 
@@ -60,10 +65,20 @@ def create_reading_item(
 
 
 @router.get("/covers/{item_id}")
-def serve_reading_cover(item_id: int, db: Session = Depends(get_db)):
-    """Public, no auth dependency — the shelf is a page anyone can look at, so
-    its covers have to load for a logged-out visitor."""
+def serve_reading_cover(
+    item_id: int,
+    db: Session = Depends(get_db),
+    level: str = Depends(viewer_level),
+):
+    """Gated by the book's own visibility.
+
+    A cover is served by item id, so leaving this open would let anyone walk
+    the ids and pull the artwork off a private shelf. 404 rather than 403 — a
+    stranger should not learn that the id exists.
+    """
     item = _item_or_404(db, item_id)
+    if item.visibility not in visible_levels(level):
+        raise HTTPException(status_code=404, detail="Reading item not found")
     if not item.cover_image:
         raise HTTPException(status_code=404, detail="No cover")
 
@@ -74,7 +89,8 @@ def serve_reading_cover(item_id: int, db: Session = Depends(get_db)):
     return FileResponse(
         path,
         media_type=covers.media_type(item.cover_image),
-        headers={"Cache-Control": "public, max-age=86400"},
+        # Private covers must not sit in a shared cache.
+        headers={"Cache-Control": "private, max-age=86400"},
     )
 
 

@@ -27,6 +27,9 @@ class ReadingItemOut(BaseModel):
     # "broken picture".
     description: str | None = None
     cover_url: str | None = None
+    # "public" / "friends" / "private". Private since 2026-08-17 — the shelf
+    # used to be open and is not any more.
+    visibility: str = "private"
 
 
 class ReadingListOut(BaseModel):
@@ -108,6 +111,7 @@ class ReadingItemIn(BaseModel):
 # more than one word — `lib/api.ts` sends `pageFrom` / `pageTo` / `bodyMd` and
 # its `fetchApi` does not snake-case outgoing bodies. Responses stay snake_case
 # like every other resource here.
+    visibility: str = "private"
 
 
 class ReadingNoteOut(BaseModel):
