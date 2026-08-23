@@ -92,6 +92,55 @@ class TaskArchiveUpdate(BaseModel):
     archived: bool | None = None
 
 
+class AiCaptureRequest(BaseModel):
+    """A note to himself, in whatever words he used."""
+
+    note: str
+
+
+class AiTaskProposal(BaseModel):
+    """⚠️ A PROPOSAL. Nothing here exists until he presses Add on it."""
+
+    title: str
+    notes: str = ""
+    due_at: str | None = None
+    urgent: bool | None = None
+    important: bool | None = None
+
+
+class AiCaptureOut(BaseModel):
+    tasks: list[AiTaskProposal]
+
+
+class BoardInsightsOut(BaseModel):
+    """The counts behind the analysis — every claim it is allowed to make."""
+
+    today: str
+    todo: int
+    in_progress: int
+    done: int
+    overdue: int
+    unsorted: int
+    do_first: int
+    stalled: int
+    undated: int
+    overdue_titles: list[str] = []
+    stalled_titles: list[str] = []
+    do_first_titles: list[str] = []
+
+
+class TaskAnalysisOut(BaseModel):
+    """Numbers always; prose when there is a model to write it.
+
+    ⚠️ `summary` is `None` rather than an error when DeepSeek is unconfigured
+    or slow — the counts are the useful half and they do not need a model. Same
+    bargain the weekly digest's paragraph makes.
+    """
+
+    insights: BoardInsightsOut
+    summary: str | None = None
+
+
 class TaskTodaySummary(BaseModel):
     """What the dashboard card needs in one request."""
 
