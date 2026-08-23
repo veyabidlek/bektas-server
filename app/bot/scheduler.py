@@ -178,7 +178,12 @@ def digest_message(db: Session, now: datetime) -> str:
 
     open_tasks = [
         t
-        for t in db.query(Task).filter(Task.done == False).all()  # noqa: E712
+        # Archived tasks are excluded here for the same reason they are absent
+        # from the board: he has already decided not to do them, and a morning
+        # brief that keeps listing them is nagging, not reminding.
+        for t in db.query(Task)
+        .filter(Task.done == False, Task.archived_at.is_(None))  # noqa: E712
+        .all()
         if t.due_at
     ]
     overdue = [t for t in open_tasks if t.due_at[:10] < today]

@@ -147,6 +147,12 @@ def ahead(db: Session, week: Week, limit: int = 5) -> WeekAhead:
         db.query(Task)
         .filter(
             Task.done == False,  # noqa: E712 — SQLAlchemy needs the comparison
+            # An archived task is one he has decided not to do. Naming it in
+            # "the week ahead" would be the digest arguing with that decision.
+            # Note the CONTRAST with the completed list above, which does not
+            # filter: something finished and then archived was still finished
+            # this week, and the digest should say so.
+            Task.archived_at.is_(None),
             Task.due_at.isnot(None),
             Task.due_at >= upcoming.start,
             Task.due_at < upcoming.after,

@@ -834,3 +834,37 @@ CREATE TABLE goal_tasks (
 );
 CREATE INDEX ix_goal_tasks_node_id ON goal_tasks(node_id);
 CREATE INDEX ix_goal_tasks_due_at ON goal_tasks(due_at);
+
+
+-- ---------------------------------------------------------------------------
+-- 2026-08-23 — tasks become a board: status, the Eisenhower matrix, archiving
+-- ---------------------------------------------------------------------------
+-- Applied to a table already holding Bektas's tasks, so these are ALTERs in
+-- app/database.py:_ADDED_COLUMNS, not a fresh CREATE.
+
+-- The board's three columns, and the only thing that decides "finished".
+-- tasks.done is now a DENORMALIZED COPY of (status = 'done'), written only by
+-- services/tasks._apply_status — four SQL filters in the bot and the weekly
+-- digest read the boolean, which is why the column stays.
+ALTER TABLE tasks ADD COLUMN status VARCHAR NOT NULL DEFAULT 'todo';
+CREATE INDEX ix_tasks_status ON tasks(status);
+
+-- The DEFAULT above is right for open tasks and wrong for finished ones, and
+-- an ALTER cannot say "…unless done". app/database.py:backfill_task_status()
+-- is the second half, run once from create_tables() on the next boot:
+--     UPDATE tasks SET status = 'done' WHERE done = true AND status = 'todo';
+-- One-directional on purpose — a task deliberately dragged out of Done is
+-- (done = false, status = 'todo') and must not be moved back every restart.
+
+-- Eisenhower, as two independent questions. NULLABLE WITH NO DEFAULT: every
+-- task predating the matrix has never been asked, and false/false would file
+-- the whole backlog under "Eliminate". NULL on either axis reads as
+-- "unsorted" — see app/services/task_rules.py.
+ALTER TABLE tasks ADD COLUMN urgent BOOLEAN;
+ALTER TABLE tasks ADD COLUMN important BOOLEAN;
+
+-- Out of sight, not gone. An archived task keeps its status, dates and notes,
+-- and is absent from every default read (list, dashboard card, bot brief,
+-- week-ahead). Completion history is NOT filtered by it: something finished
+-- and then archived was still finished that week.
+ALTER TABLE tasks ADD COLUMN archived_at VARCHAR;

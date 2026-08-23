@@ -72,6 +72,19 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # apply — a plain habit and a state-only write carry no numbers.
     ("habits", "target_per_day", "INTEGER"),
     ("habit_completions", "amount", "INTEGER"),
+    # The Jira-style board, 2026-08-23, on a table already full of Bektas's
+    # tasks. The DEFAULT lands every existing row in "todo", which is right for
+    # the open ones and WRONG for the finished ones — `backfill_task_status()`
+    # below fixes those from the `done` flag they already carry. The column has
+    # to exist before that can run, which is why it is a default plus a
+    # backfill rather than one clever DDL.
+    ("tasks", "status", "VARCHAR NOT NULL DEFAULT 'todo'"),
+    # Eisenhower. Nullable with NO default on purpose: every task that predates
+    # the matrix has never been asked, and `false` would file the lot under
+    # "Eliminate". See app/services/task_rules.UNSORTED.
+    ("tasks", "urgent", "BOOLEAN"),
+    ("tasks", "important", "BOOLEAN"),
+    ("tasks", "archived_at", "VARCHAR"),
 ]
 
 
@@ -91,9 +104,37 @@ def ensure_columns() -> None:
             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
 
+def backfill_task_status() -> None:
+    """Give already-finished tasks the status their `done` flag implies.
+
+    `tasks.status` arrives with `DEFAULT 'todo'`, which is the only default an
+    ALTER TABLE can give it — so on the first boot after the board ships, every
+    task Bektas ever ticked would sit in the To Do column. This is the second
+    half of that migration.
+
+    ⚠️ Idempotent and one-directional: it only ever moves `done = true` rows
+    that are still `'todo'`. It must never write the other way. A task he later
+    drags out of Done has `done = false` and `status = 'todo'` legitimately,
+    and a "keep them in sync" sweep would fight the board on every restart.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "tasks" not in set(inspector.get_table_names()):
+        return
+    if "status" not in {c["name"] for c in inspector.get_columns("tasks")}:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET status = 'done' WHERE done = true AND status = 'todo'")
+        )
+
+
 def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    backfill_task_status()
     # Imported here, not at module scope: search_index reads `engine` from this
     # module, and a top-level import would be a cycle.
     from app.services.search_index import ensure_search_index

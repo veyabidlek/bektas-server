@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskOut, TaskTodaySummary, TaskUpdate
+from app.services import task_rules
 from app.services.calendar import ASTANA, normalize_dt
 
 # How many tasks the dashboard card shows.
@@ -34,14 +35,20 @@ def _normalize_due(due_at: str | None) -> str | None:
 
 
 def _out(task: Task) -> TaskOut:
+    status = task.status or task_rules.TODO
     return TaskOut(
         id=task.id,
         title=task.title,
         notes=task.notes or "",
         due_at=task.due_at,
         due_all_day=bool(task.due_at) and len(task.due_at or "") <= 10,
-        done=task.done,
+        status=status,
+        done=task_rules.is_done(status),
         done_at=task.done_at,
+        urgent=task.urgent,
+        important=task.important,
+        quadrant=task_rules.quadrant(task.urgent, task.important),
+        archived_at=task.archived_at,
         source=task.source,
         created_at=task.created_at,
         updated_at=task.updated_at,
@@ -52,18 +59,52 @@ def out(task: Task) -> TaskOut:
     return _out(task)
 
 
+# --------------------------------------------------------------- the funnel
+
+
+def _apply_status(task: Task, status: str) -> None:
+    """⚠️ THE ONLY WRITER of `status`, `done` and `done_at`. Keep it that way.
+
+    Three columns, one decision. `done` is a denormalized copy of
+    `status == "done"` (four SQL filters across the bot and the weekly digest
+    read it), and `done_at` is stamped on the way in and **cleared on the way
+    out** so "recently completed" ordering never shows a timestamp belonging to
+    work that is open again.
+
+    Re-entering Done does NOT re-stamp: dragging a card Done → In Progress →
+    Done is a correction, and it should not rewrite when the thing was
+    actually finished.
+    """
+    task.status = task_rules.normalize_status(status)
+    was_done = bool(task.done)
+    task.done = task_rules.is_done(task.status)
+    if not task.done:
+        task.done_at = None
+    elif not was_done or not task.done_at:
+        task.done_at = _now()
+
+
+# ------------------------------------------------------------------- reads
+
+
 def list_tasks(
     db: Session,
     include_done: bool = True,
     start: str | None = None,
     end: str | None = None,
+    include_archived: bool = False,
 ) -> list[TaskOut]:
     """All tasks, or only those due inside [start, end).
 
     The range form is what the calendar asks for; it excludes undated tasks,
     which have no place on a calendar.
+
+    Archived tasks are absent unless asked for — that is the whole point of
+    archiving, and it is also the codebase's `include_archived` convention.
     """
     q = db.query(Task)
+    if not include_archived:
+        q = q.filter(Task.archived_at.is_(None))
     if not include_done:
         q = q.filter(Task.done == False)  # noqa: E712
     if start or end:
@@ -82,7 +123,9 @@ def today_summary(db: Session) -> TaskTodaySummary:
     day = today()
     open_tasks = [
         t
-        for t in db.query(Task).filter(Task.done == False).all()  # noqa: E712
+        for t in db.query(Task)
+        .filter(Task.done == False, Task.archived_at.is_(None))  # noqa: E712
+        .all()
         if t.due_at
     ]
 
@@ -106,6 +149,9 @@ def get_task(db: Session, task_id: str) -> Task | None:
     return db.query(Task).filter(Task.id == task_id).first()
 
 
+# ------------------------------------------------------------------ writes
+
+
 def create_task(db: Session, data: TaskCreate) -> Task:
     now = _now()
     task = Task(
@@ -113,11 +159,15 @@ def create_task(db: Session, data: TaskCreate) -> Task:
         title=data.title.strip(),
         notes=(data.notes or "").strip(),
         due_at=_normalize_due(data.due_at),
-        done=False,
+        urgent=data.urgent,
+        important=data.important,
         source=(data.source or "web").strip() or "web",
         created_at=now,
         updated_at=now,
     )
+    # Through the funnel even on create: a task made straight into Done (the
+    # board's "add here" affordance) has to get its done_at like any other.
+    _apply_status(task, data.status or task_rules.TODO)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -133,9 +183,16 @@ def update_task(db: Session, task: Task, data: TaskUpdate) -> Task:
         fields["notes"] = fields["notes"].strip()
     if "due_at" in fields:
         fields["due_at"] = _normalize_due(fields["due_at"])
-    if "done" in fields and fields["done"] is not None:
-        _apply_done(task, bool(fields["done"]))
-        fields.pop("done")
+
+    # `status` wins over `done`: the board is the richer instrument, and the
+    # router refuses a body carrying both, so this only ever resolves a caller
+    # sending one of them.
+    status = fields.pop("status", None)
+    done = fields.pop("done", None)
+    if status is not None:
+        _apply_status(task, status)
+    elif done is not None:
+        _apply_status(task, task_rules.status_for_done(bool(done)))
 
     for field, value in fields.items():
         setattr(task, field, value)
@@ -146,16 +203,44 @@ def update_task(db: Session, task: Task, data: TaskUpdate) -> Task:
     return task
 
 
-def _apply_done(task: Task, done: bool) -> None:
-    task.done = done
-    # done_at is cleared on un-ticking so the "recently finished" ordering never
-    # shows a stale timestamp for an open task.
-    task.done_at = _now() if done else None
+def set_status(db: Session, task: Task, status: str) -> Task:
+    """What a drag between board columns commits."""
+    _apply_status(task, status)
+    task.updated_at = _now()
+    db.commit()
+    db.refresh(task)
+    return task
 
 
 def set_done(db: Session, task: Task, done: bool | None = None) -> Task:
-    """Set the flag, or flip it when `done` is not given."""
-    _apply_done(task, (not task.done) if done is None else done)
+    """Tick the box, or flip it when `done` is not given.
+
+    The checkbox on the calendar and in the list predates the board; it still
+    speaks booleans and is translated here rather than at each call site.
+    """
+    target = (not task.done) if done is None else done
+    return set_status(db, task, task_rules.status_for_done(bool(target)))
+
+
+def set_priority(db: Session, task: Task, urgent: bool | None, important: bool | None) -> Task:
+    """Place the task in the matrix. Both axes, every time — see the schema."""
+    task.urgent = urgent
+    task.important = important
+    task.updated_at = _now()
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def set_archived(db: Session, task: Task, archived: bool | None = None) -> Task:
+    """Out of the way, or back. Nothing else about the task changes.
+
+    Archiving is deliberately NOT completion: an abandoned task is archived
+    while still `todo`, and the Archive shows it as such. Conflating the two
+    would make "what did I actually finish?" unanswerable.
+    """
+    target = (task.archived_at is None) if archived is None else archived
+    task.archived_at = _now() if target else None
     task.updated_at = _now()
     db.commit()
     db.refresh(task)
