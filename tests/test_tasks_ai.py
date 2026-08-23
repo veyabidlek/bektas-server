@@ -211,6 +211,21 @@ class TestRoutes:
         assert res.status_code == 503
         assert "DEEPSEEK_API_KEY" in res.json()["detail"]
 
+    def test_a_configured_key_that_fails_does_not_blame_the_key(self, client, auth, monkeypatch):
+        """⚠️ This happened on 2026-08-23: the key was set and the DeepSeek
+        account was out of credit (402). Saying "not configured" sends you
+        looking for a key that is right there — a message naming the wrong
+        cause is worse than a vague one, because it is actionable in the wrong
+        direction."""
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "set-but-the-call-will-fail")
+        monkeypatch.setattr("app.services.llm.chat", lambda *a, **k: None)
+
+        res = client.post("/api/tasks/ai/capture", headers=auth, json={"note": "call the bank"})
+        assert res.status_code == 503
+        detail = res.json()["detail"]
+        assert "not configured" not in detail
+        assert "did not answer" in detail
+
     def test_analysis_still_answers_with_no_model(self, client, auth, monkeypatch):
         """⚠️ 200, not 503. The counts do not need a model and are the useful
         half — only the paragraph is optional."""

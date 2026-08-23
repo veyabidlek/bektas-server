@@ -23,12 +23,24 @@ from app.services import tasks as svc
 # Admin-only, like the calendar and the diary.
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
-#: Said out loud rather than as a 500, exactly like the goals drafter's: the
-#: feature is not broken, there is simply no model to read the note with.
-AI_UNAVAILABLE = (
-    "Capture is unavailable — DEEPSEEK_API_KEY is not configured, "
-    "or the model did not return a usable task."
-)
+
+def _ai_unavailable() -> str:
+    """Why capture could not answer, said out loud rather than as a 500.
+
+    ⚠️ The two causes are told apart on purpose. "DEEPSEEK_API_KEY is not
+    configured" sent someone hunting for a missing key on 2026-08-23 when the
+    key was present and the account was simply out of credit — a message that
+    names the wrong cause is worse than a vague one, because it is actionable
+    in the wrong direction.
+    """
+    from app.services import llm
+
+    if not llm.configured():
+        return "Capture is unavailable — DEEPSEEK_API_KEY is not configured."
+    return (
+        "Capture is unavailable — the model did not answer. Check the DeepSeek "
+        "account (an exhausted balance answers 402) and the server log."
+    )
 
 
 def _load(db: Session, task_id: str):
@@ -59,7 +71,7 @@ def ai_capture(
         raise HTTPException(status_code=422, detail="Say what needs doing")
     proposals = tasks_ai.capture(note, svc.today())
     if proposals is None:
-        raise HTTPException(status_code=503, detail=AI_UNAVAILABLE)
+        raise HTTPException(status_code=503, detail=_ai_unavailable())
     return AiCaptureOut(tasks=proposals)
 
 
