@@ -4,6 +4,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_admin
 from app.schemas.task import (
+    AiCaptureOut,
+    AiCaptureRequest,
+    BoardInsightsOut,
+    TaskAnalysisOut,
     TaskArchiveUpdate,
     TaskCreate,
     TaskDoneUpdate,
@@ -13,11 +17,18 @@ from app.schemas.task import (
     TaskTodaySummary,
     TaskUpdate,
 )
+from app.services import task_insights, task_rules, tasks_ai
 from app.services import tasks as svc
-from app.services import task_rules
 
 # Admin-only, like the calendar and the diary.
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+#: Said out loud rather than as a 500, exactly like the goals drafter's: the
+#: feature is not broken, there is simply no model to read the note with.
+AI_UNAVAILABLE = (
+    "Capture is unavailable — DEEPSEEK_API_KEY is not configured, "
+    "or the model did not return a usable task."
+)
 
 
 def _load(db: Session, task_id: str):
@@ -31,6 +42,44 @@ def _load(db: Session, task_id: str):
 def get_today(db: Session = Depends(get_db), _: None = Depends(require_admin)):
     """Declared before /{task_id} routes so "today" is never read as an id."""
     return svc.today_summary(db)
+
+
+@router.post("/ai/capture", response_model=AiCaptureOut)
+def ai_capture(
+    data: AiCaptureRequest,
+    _: None = Depends(require_admin),
+):
+    """A note in his own words → proposed tasks.
+
+    ⚠️ Declared before `/{task_id}` and it SAVES NOTHING. The response is a
+    proposal; the only thing that creates a task is him pressing Add on one.
+    """
+    note = data.note.strip()
+    if not note:
+        raise HTTPException(status_code=422, detail="Say what needs doing")
+    proposals = tasks_ai.capture(note, svc.today())
+    if proposals is None:
+        raise HTTPException(status_code=503, detail=AI_UNAVAILABLE)
+    return AiCaptureOut(tasks=proposals)
+
+
+@router.get("/ai/analysis", response_model=TaskAnalysisOut)
+def ai_analysis(
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """What the board says.
+
+    ⚠️ Always 200. The counts are computed here and are the useful half; the
+    paragraph is the optional one, and a missing DeepSeek key drops it to
+    `null` rather than failing the request. Same bargain as the weekly digest.
+    """
+    active = svc.list_tasks(db, include_archived=False)
+    insights = task_insights.summarize(active, svc.today())
+    return TaskAnalysisOut(
+        insights=BoardInsightsOut(**insights.__dict__),
+        summary=tasks_ai.analyse(task_insights.as_context(insights)),
+    )
 
 
 @router.get("", response_model=list[TaskOut])
