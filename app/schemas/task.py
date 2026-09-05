@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.task_tag import TaskTagOut
+
 
 class TaskOut(BaseModel):
     id: str
@@ -32,6 +34,9 @@ class TaskOut(BaseModel):
     archived_at: str | None = None
 
     source: str = "web"
+    # The tags this task wears, with their colours, so a card can draw its
+    # chips without a second request per row.
+    tags: list[TaskTagOut] = []
     created_at: str
     updated_at: str
 
@@ -44,6 +49,8 @@ class TaskCreate(BaseModel):
     urgent: bool | None = None
     important: bool | None = None
     source: str = "web"
+    # Which tags to put on it. Unknown ids are refused, not skipped.
+    tag_ids: list[str] | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -60,6 +67,11 @@ class TaskUpdate(BaseModel):
     # Kept for the callers that predate `status`. Sending both is refused by
     # the router rather than silently resolved.
     done: bool | None = None
+    # ⚠️ The `exclude_unset` distinction matters most here. Omitted means "I am
+    # not talking about tags" and the task keeps them; `[]` means "take them
+    # all off". Without that difference, renaming a task would strip its
+    # project.
+    tag_ids: list[str] | None = None
 
 
 class TaskDoneUpdate(BaseModel):

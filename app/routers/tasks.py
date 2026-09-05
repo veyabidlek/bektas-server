@@ -17,7 +17,8 @@ from app.schemas.task import (
     TaskTodaySummary,
     TaskUpdate,
 )
-from app.services import task_insights, task_rules, tasks_ai
+from app.schemas.task_tag import TaskTagCreate, TaskTagOut, TaskTagUpdate
+from app.services import task_insights, task_rules, task_tags, tasks_ai
 from app.services import tasks as svc
 
 # Admin-only, like the calendar and the diary.
@@ -94,6 +95,60 @@ def ai_analysis(
     )
 
 
+# ---------------------------------------------------------------- the tags
+#
+# ⚠️ Declared BEFORE `/{task_id}`, or FastAPI matches "tags" as a task id and
+# every one of these returns 404.
+
+
+def _tag_or_404(db: Session, tag_id: str):
+    tag = task_tags.get_tag(db, tag_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag
+
+
+@router.get("/tags", response_model=list[TaskTagOut])
+def list_tags(db: Session = Depends(get_db), _: None = Depends(require_admin)):
+    return [task_tags.out(t) for t in task_tags.list_tags(db)]
+
+
+@router.post("/tags", response_model=TaskTagOut, status_code=201)
+def create_tag(
+    data: TaskTagCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    try:
+        return task_tags.out(task_tags.create_tag(db, data))
+    except task_tags.TagNameTaken as exc:
+        raise HTTPException(status_code=409, detail=f"«{exc}» already exists") from exc
+
+
+@router.patch("/tags/{tag_id}", response_model=TaskTagOut)
+def update_tag(
+    tag_id: str,
+    data: TaskTagUpdate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    tag = _tag_or_404(db, tag_id)
+    try:
+        return task_tags.out(task_tags.update_tag(db, tag, data))
+    except task_tags.TagNameTaken as exc:
+        raise HTTPException(status_code=409, detail=f"«{exc}» already exists") from exc
+
+
+@router.delete("/tags/{tag_id}", status_code=204)
+def delete_tag(
+    tag_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """Drop the tag. The tasks that wore it stay, wearing one fewer."""
+    task_tags.delete_tag(db, _tag_or_404(db, tag_id))
+
+
 @router.get("", response_model=list[TaskOut])
 def list_tasks(
     include_done: bool = True,
@@ -125,7 +180,9 @@ def create_task(
         task = svc.create_task(db, data)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return svc.out(task)
+    except task_tags.UnknownTag as exc:
+        raise HTTPException(status_code=404, detail="Tag not found") from exc
+    return svc.out(task, db)
 
 
 @router.put("/{task_id}", response_model=TaskOut)
@@ -150,7 +207,9 @@ def update_task(
         task = svc.update_task(db, task, data)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return svc.out(task)
+    except task_tags.UnknownTag as exc:
+        raise HTTPException(status_code=404, detail="Tag not found") from exc
+    return svc.out(task, db)
 
 
 @router.patch("/{task_id}/status", response_model=TaskOut)
@@ -163,7 +222,7 @@ def set_status(
     """A drag between board columns. Moving into Done stamps the completion."""
     task = _load(db, task_id)
     try:
-        return svc.out(svc.set_status(db, task, data.status))
+        return svc.out(db=db, task=svc.set_status(db, task, data.status))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -177,7 +236,7 @@ def set_done(
 ):
     """Tick or untick. With no body it toggles — that is what the checkbox sends."""
     task = _load(db, task_id)
-    return svc.out(svc.set_done(db, task, data.done if data else None))
+    return svc.out(db=db, task=svc.set_done(db, task, data.done if data else None))
 
 
 @router.patch("/{task_id}/priority", response_model=TaskOut)
@@ -195,7 +254,7 @@ def set_priority(
     partial update would leave a card in a quadrant nobody chose.
     """
     task = _load(db, task_id)
-    return svc.out(svc.set_priority(db, task, data.urgent, data.important))
+    return svc.out(db=db, task=svc.set_priority(db, task, data.urgent, data.important))
 
 
 @router.patch("/{task_id}/archive", response_model=TaskOut)
@@ -207,7 +266,7 @@ def set_archived(
 ):
     """Archive or restore. With no body it toggles."""
     task = _load(db, task_id)
-    return svc.out(svc.set_archived(db, task, data.archived if data else None))
+    return svc.out(db=db, task=svc.set_archived(db, task, data.archived if data else None))
 
 
 @router.delete("/{task_id}", status_code=204)

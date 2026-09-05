@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskOut, TaskTodaySummary, TaskUpdate
-from app.services import task_rules
+from app.services import task_rules, task_tags
 from app.services.calendar import ASTANA, normalize_dt
 
 # How many tasks the dashboard card shows.
@@ -34,7 +34,7 @@ def _normalize_due(due_at: str | None) -> str | None:
     return normalize_dt(text)
 
 
-def _out(task: Task) -> TaskOut:
+def _out(task: Task, tags=()) -> TaskOut:
     status = task.status or task_rules.TODO
     return TaskOut(
         id=task.id,
@@ -50,13 +50,22 @@ def _out(task: Task) -> TaskOut:
         quadrant=task_rules.quadrant(task.urgent, task.important),
         archived_at=task.archived_at,
         source=task.source,
+        tags=[task_tags.out(t) for t in tags],
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
 
 
-def out(task: Task) -> TaskOut:
-    return _out(task)
+def out(task: Task, db: Session | None = None) -> TaskOut:
+    """One task, with its tags when a session is on hand to read them.
+
+    The session is optional so the older callers that only ever wanted the
+    task's own columns keep working; every route that returns a task to the
+    board passes it, because a card with no chips looks like a task with no
+    project.
+    """
+    tags = task_tags.tags_for(db, task.id) if db is not None else ()
+    return _out(task, tags)
 
 
 # --------------------------------------------------------------- the funnel
@@ -115,7 +124,9 @@ def list_tasks(
             q = q.filter(Task.due_at < end)
 
     tasks = q.order_by(Task.due_at.is_(None), Task.due_at.asc(), Task.created_at.asc()).all()
-    return [_out(t) for t in tasks]
+    # One query for every task's tags rather than one per card.
+    by_task = task_tags.tags_for_many(db, [t.id for t in tasks])
+    return [_out(t, by_task.get(t.id, ())) for t in tasks]
 
 
 def today_summary(db: Session) -> TaskTodaySummary:
@@ -171,6 +182,9 @@ def create_task(db: Session, data: TaskCreate) -> Task:
     db.add(task)
     db.commit()
     db.refresh(task)
+    # After the insert: a link needs a task id to point at.
+    if data.tag_ids is not None:
+        task_tags.set_tags(db, task.id, data.tag_ids)
     return task
 
 
@@ -187,6 +201,11 @@ def update_task(db: Session, task: Task, data: TaskUpdate) -> Task:
     # `status` wins over `done`: the board is the richer instrument, and the
     # router refuses a body carrying both, so this only ever resolves a caller
     # sending one of them.
+    # ⚠️ Out of `fields` before the setattr loop below: `tag_ids` lives in a
+    # join table, not on the row, and setattr would quietly attach a stray
+    # attribute that never reaches the database.
+    tag_ids = fields.pop("tag_ids", None)
+
     status = fields.pop("status", None)
     done = fields.pop("done", None)
     if status is not None:
@@ -200,6 +219,8 @@ def update_task(db: Session, task: Task, data: TaskUpdate) -> Task:
     task.updated_at = _now()
     db.commit()
     db.refresh(task)
+    if tag_ids is not None:
+        task_tags.set_tags(db, task.id, tag_ids)
     return task
 
 
@@ -248,5 +269,10 @@ def set_archived(db: Session, task: Task, archived: bool | None = None) -> Task:
 
 
 def delete_task(db: Session, task: Task) -> None:
+    # ⚠️ The links go first, and by hand. SQLite only enforces ON DELETE
+    # CASCADE when `PRAGMA foreign_keys` is on and this app leaves it off, so
+    # the rows would otherwise survive their task and re-appear the moment an
+    # id is reused.
+    task_tags.unlink_task(db, task.id)
     db.delete(task)
     db.commit()
