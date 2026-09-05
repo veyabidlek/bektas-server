@@ -868,3 +868,42 @@ ALTER TABLE tasks ADD COLUMN important BOOLEAN;
 -- week-ahead). Completion history is NOT filtered by it: something finished
 -- and then archived was still finished that week.
 ALTER TABLE tasks ADD COLUMN archived_at VARCHAR;
+
+-- 2026-09-05 — tags on tasks, so the board can be filtered to one project.
+--
+-- Two NEW tables, which create_all() builds on its own: no _ADDED_COLUMNS
+-- entry is needed, and `tasks` itself is deliberately not touched. That table
+-- already holds three columns (status, done, done_at) that only
+-- services/tasks._apply_status may write; giving the row no new reason to be
+-- written is the cheapest way to keep that rule true.
+CREATE TABLE task_tags (
+    id          VARCHAR PRIMARY KEY,
+    name        VARCHAR NOT NULL UNIQUE,
+    -- A key from the client's fixed palette ("blue", "green", …), not a hex
+    -- string: a closed set keeps the chips looking like one design.
+    color       VARCHAR NOT NULL DEFAULT 'slate',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  VARCHAR NOT NULL,
+    updated_at  VARCHAR NOT NULL
+);
+CREATE INDEX ix_task_tags_name ON task_tags(name);
+
+-- ⚠️ The UNIQUE above is byte-wise, so «Tapsyr» and «tapsyr» would both fit
+-- through it. Case-insensitive uniqueness is decided in
+-- services/task_tags._fold before the write; the constraint is the second line
+-- of defence, not the first.
+
+CREATE TABLE task_tag_links (
+    task_id VARCHAR NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    tag_id  VARCHAR NOT NULL REFERENCES task_tags(id) ON DELETE CASCADE,
+    -- Keyed on the PAIR: the same tag twice on one task is impossible rather
+    -- than tidied up afterwards.
+    PRIMARY KEY (task_id, tag_id)
+);
+CREATE INDEX ix_task_tag_links_task ON task_tag_links(task_id);
+CREATE INDEX ix_task_tag_links_tag ON task_tag_links(tag_id);
+
+-- ⚠️ The ON DELETE CASCADEs are documentation, not enforcement: SQLite honours
+-- them only under `PRAGMA foreign_keys = ON`, which this app does not set.
+-- services/task_tags deletes the links by hand at both ends. Without that a
+-- link outlives its task and re-attaches to the next row that reuses the id.

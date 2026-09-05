@@ -18,7 +18,7 @@ from app.schemas.task import (
     TaskUpdate,
 )
 from app.schemas.task_tag import TaskTagCreate, TaskTagOut, TaskTagUpdate
-from app.services import task_insights, task_rules, task_tags, tasks_ai
+from app.services import task_insights, task_rules, task_tag_links, task_tags, tasks_ai
 from app.services import tasks as svc
 
 # Admin-only, like the calendar and the diary.
@@ -180,7 +180,7 @@ def create_task(
         task = svc.create_task(db, data)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except task_tags.UnknownTag as exc:
+    except task_tag_links.UnknownTag as exc:
         raise HTTPException(status_code=404, detail="Tag not found") from exc
     return svc.out(task, db)
 
@@ -207,7 +207,7 @@ def update_task(
         task = svc.update_task(db, task, data)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except task_tags.UnknownTag as exc:
+    except task_tag_links.UnknownTag as exc:
         raise HTTPException(status_code=404, detail="Tag not found") from exc
     return svc.out(task, db)
 
