@@ -14,6 +14,7 @@ from app.models.diary import DiaryEntry, DiaryImage
 from app.models.goal import Goal, GoalNode, GoalTask
 from app.models.task import Task
 from app.models.task_tag import TaskTag, TaskTagLink
+from app.models.task_subtask import TaskSubtask
 from app.models.inbox import InboxItem, InboxImage
 from app.models.reading import ReadingItem, ReadingNote, ReadingSession
 from app.models.sleep import SleepNight
@@ -31,7 +32,7 @@ __all__ = [
     "Article", "Comment", "ArticleImage",
     "Habit", "HabitCompletion",
     "Goal", "GoalNode", "GoalTask",
-    "TaskTag", "TaskTagLink",
+    "TaskTag", "TaskTagLink", "TaskSubtask",
     "Project", "PomodoroSession",
     "ExperienceItem", "SkillCategory", "EducationItem",
     "Profile",

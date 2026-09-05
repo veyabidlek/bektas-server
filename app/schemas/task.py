@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+from app.schemas.task_subtask import TaskSubtaskOut
 from app.schemas.task_tag import TaskTagOut
 
 
@@ -37,6 +38,10 @@ class TaskOut(BaseModel):
     # The tags this task wears, with their colours, so a card can draw its
     # chips without a second request per row.
     tags: list[TaskTagOut] = []
+    # The checklist, sent with the task so a card can draw «2/5»
+    # without a request of its own. ⚠️ These are NOT tasks and never
+    # enter a task count — see models/task_subtask.py.
+    subtasks: list[TaskSubtaskOut] = []
     created_at: str
     updated_at: str
 

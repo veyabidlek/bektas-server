@@ -17,8 +17,20 @@ from app.schemas.task import (
     TaskTodaySummary,
     TaskUpdate,
 )
+from app.schemas.task_subtask import (
+    TaskSubtaskCreate,
+    TaskSubtaskOut,
+    TaskSubtaskUpdate,
+)
 from app.schemas.task_tag import TaskTagCreate, TaskTagOut, TaskTagUpdate
-from app.services import task_insights, task_rules, task_tag_links, task_tags, tasks_ai
+from app.services import (
+    task_insights,
+    task_rules,
+    task_subtasks,
+    task_tag_links,
+    task_tags,
+    tasks_ai,
+)
 from app.services import tasks as svc
 
 # Admin-only, like the calendar and the diary.
@@ -147,6 +159,56 @@ def delete_tag(
 ):
     """Drop the tag. The tasks that wore it stay, wearing one fewer."""
     task_tags.delete_tag(db, _tag_or_404(db, tag_id))
+
+
+# ------------------------------------------------------------- the checklist
+#
+# ⚠️ Like the tag routes, these are declared BEFORE `/{task_id}` — otherwise
+# "subtasks" is matched as a task id and every one of them answers 404.
+
+
+def _subtask_or_404(db: Session, subtask_id: str):
+    sub = task_subtasks.get(db, subtask_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    return sub
+
+
+@router.patch("/subtasks/{subtask_id}", response_model=TaskSubtaskOut)
+def update_subtask(
+    subtask_id: str,
+    data: TaskSubtaskUpdate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """Tick, rename or reorder one line.
+
+    ⚠️ It never touches the parent. Finishing a checklist is not finishing the
+    task — Bektas ticks that himself — and `status`/`done`/`done_at` have
+    exactly one writer, which is not here.
+    """
+    sub = _subtask_or_404(db, subtask_id)
+    return task_subtasks.out(task_subtasks.update(db, sub, data))
+
+
+@router.delete("/subtasks/{subtask_id}", status_code=204)
+def delete_subtask(
+    subtask_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    task_subtasks.remove(db, _subtask_or_404(db, subtask_id))
+
+
+@router.post("/{task_id}/subtasks", response_model=TaskSubtaskOut, status_code=201)
+def create_subtask(
+    task_id: str,
+    data: TaskSubtaskCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    _load(db, task_id)  # 404 rather than a line hanging off nothing
+    return task_subtasks.out(task_subtasks.create(db, task_id, data))
 
 
 @router.get("", response_model=list[TaskOut])

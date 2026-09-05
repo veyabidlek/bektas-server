@@ -907,3 +907,31 @@ CREATE INDEX ix_task_tag_links_tag ON task_tag_links(tag_id);
 -- them only under `PRAGMA foreign_keys = ON`, which this app does not set.
 -- services/task_tags deletes the links by hand at both ends. Without that a
 -- link outlives its task and re-attaches to the next row that reuses the id.
+
+-- 2026-09-05 — a checklist inside a task.
+--
+-- ⚠️⚠️ A subtask is deliberately NOT a task, and the separate table is the
+-- enforcement rather than a preference. The morning brief, the weekly digest,
+-- the dashboard card and the backlog all query `tasks`; a row here cannot
+-- reach any of them. Were these rows in `tasks`, six queries would each need a
+-- filter and one omission would put a checklist line in tomorrow's brief.
+--
+-- No status, no due_at, no tags, no archived_at: a title and a tick. Ticking
+-- every line does NOT finish the parent — services/tasks._apply_status stays
+-- the only writer of status/done/done_at.
+CREATE TABLE task_subtasks (
+    id          VARCHAR PRIMARY KEY,
+    task_id     VARCHAR NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title       VARCHAR NOT NULL,
+    done        BOOLEAN NOT NULL DEFAULT 0,
+    -- A checklist is a sequence, so the order is the user's, not the insert
+    -- order's.
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  VARCHAR NOT NULL,
+    updated_at  VARCHAR NOT NULL
+);
+CREATE INDEX ix_task_subtasks_task ON task_subtasks(task_id);
+
+-- ⚠️ The CASCADE is documentation, not enforcement — same as task_tag_links.
+-- services/task_subtasks.remove_for_task deletes the lines by hand when a task
+-- goes, or they outlive it and re-attach to the next row that reuses the id.

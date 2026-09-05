@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskOut, TaskTodaySummary, TaskUpdate
-from app.services import task_rules, task_tag_links, task_tags
+from app.services import task_rules, task_subtasks, task_tag_links, task_tags
 from app.services.calendar import ASTANA, normalize_dt
 
 # How many tasks the dashboard card shows.
@@ -34,7 +34,7 @@ def _normalize_due(due_at: str | None) -> str | None:
     return normalize_dt(text)
 
 
-def _out(task: Task, tags=()) -> TaskOut:
+def _out(task: Task, tags=(), subtasks=()) -> TaskOut:
     status = task.status or task_rules.TODO
     return TaskOut(
         id=task.id,
@@ -51,6 +51,7 @@ def _out(task: Task, tags=()) -> TaskOut:
         archived_at=task.archived_at,
         source=task.source,
         tags=[task_tags.out(t) for t in tags],
+        subtasks=[task_subtasks.out(s) for s in subtasks],
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
@@ -65,7 +66,8 @@ def out(task: Task, db: Session | None = None) -> TaskOut:
     project.
     """
     tags = task_tag_links.tags_for(db, task.id) if db is not None else ()
-    return _out(task, tags)
+    subs = task_subtasks.for_task(db, task.id) if db is not None else ()
+    return _out(task, tags, subs)
 
 
 # --------------------------------------------------------------- the funnel
@@ -125,8 +127,10 @@ def list_tasks(
 
     tasks = q.order_by(Task.due_at.is_(None), Task.due_at.asc(), Task.created_at.asc()).all()
     # One query for every task's tags rather than one per card.
-    by_task = task_tag_links.tags_for_many(db, [t.id for t in tasks])
-    return [_out(t, by_task.get(t.id, ())) for t in tasks]
+    ids = [t.id for t in tasks]
+    by_task = task_tag_links.tags_for_many(db, ids)
+    subs = task_subtasks.for_many(db, ids)
+    return [_out(t, by_task.get(t.id, ()), subs.get(t.id, ())) for t in tasks]
 
 
 def today_summary(db: Session) -> TaskTodaySummary:
@@ -274,5 +278,6 @@ def delete_task(db: Session, task: Task) -> None:
     # the rows would otherwise survive their task and re-appear the moment an
     # id is reused.
     task_tag_links.unlink_task(db, task.id)
+    task_subtasks.remove_for_task(db, task.id)
     db.delete(task)
     db.commit()
